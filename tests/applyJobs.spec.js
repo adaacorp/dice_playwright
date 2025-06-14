@@ -29,8 +29,8 @@ const SEARCH_ITEMS = [
 
 const MAX_PAGES = 3; // Reduced for stability
 const LOGIN_URL = "https://www.dice.com/dashboard/login";
-const USERNAME = "ENTER_YOUR_USERNAME_HERE"; // Replace with your Dice username
-const PASSWORD = "ENTER_YOUR_PASSWORD_HERE"; // Replace with your Dice password
+const USERNAME = "amar.sdet1@gmail.com"; // Replace with your Dice username
+const PASSWORD = "Admin@lcl25"; // Replace with your Dice password
 const MAX_CONCURRENT_TABS = 2; // Reduced concurrency
 const TAB_DELAY = 2000; // Increased delay
 const PAGE_DELAY = 3000; // Added page delay
