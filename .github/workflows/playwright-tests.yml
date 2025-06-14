@@ -1,0 +1,54 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: "0 10 * * 1-5"
+    - cron: "0 14 * * 1-5"
+    - cron: "0 19 * * 1-5"
+    - cron: "0 2 * * 2-6"
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install @playwright/test as dev dependency
+        run: npm install -D @playwright/test
+      - name: Install exceljs package
+        run: npm install exceljs
+      - name: Install only Chromium browser
+        run: npx playwright install chromium
+      - name: Run Playwright test for applyJobs.spec.js
+        run: npx playwright test tests/applyJobs.spec.js
+
+      - name: Get Date and Time
+        id: get_date
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "GitHub Actions Job Completed"
+          to: amar368babu@gmail.com
+          from: "Playwright CI <amar368babu@gmail.com>"
+          content_type: text/plain
+          body: |
+            The Playwright job has completed.
+            Date: ${{ steps.get_date.outputs.date }}
+            Time: ${{ steps.get_date.outputs.time }} UTC
+            Repository: ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
