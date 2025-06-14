@@ -278,3 +278,4 @@ This tool is for educational and personal use only. Please:
 [⭐ Star this repository](https://github.com/yourusername/dice-job-automation) if you found it helpful!
 
 </div>
+# dice_apply_playwright
