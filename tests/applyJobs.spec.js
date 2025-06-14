@@ -6,37 +6,24 @@ const fs = require("fs");
 const path = require("path");
 
 const SEARCH_ITEMS = [
-  // General QA / Testing Roles
+  // Focus on most relevant QA/Testing roles to reduce total jobs processed
   "Software Tester",
-  "Quality",
-  "Test Analyst",
-  "Manual Tester",
   "QA",
-
-  // Automation-Focused Roles
   "Automation",
-  "Test Automation",
-
-  // SDET-Focused Titles
   "SDET",
-  "Software Developer Engineer in Test",
-
-  // Performance Testing Roles
   "Performance",
-  "Load",
-  "Stress",
 ];
 
-const MAX_PAGES = 3; // Reduced for stability
+const MAX_PAGES = 1; // Reduced for faster execution
 const LOGIN_URL = "https://www.dice.com/dashboard/login";
 const USERNAME = "amar.sdet1@gmail.com"; // Replace with your Dice username
 const PASSWORD = "Admin@lcl25"; // Replace with your Dice password
-const MAX_CONCURRENT_TABS = 2; // Reduced concurrency
-const TAB_DELAY = 2000; // Increased delay
-const PAGE_DELAY = 3000; // Added page delay
+const MAX_CONCURRENT_TABS = 3; // Increased concurrency for speed
+const TAB_DELAY = 1000; // Reduced delay between tabs
+const PAGE_DELAY = 1500; // Reduced delay between pages
 
-// Increased test timeout
-test.setTimeout(900000); // 15 minutes
+// Increased test timeout (optional, but should not be needed with above changes)
+test.setTimeout(7200000); // 2 hours
 
 class JobApplicationLogger {
   constructor() {
