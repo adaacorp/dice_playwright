@@ -1,0 +1,5 @@
+To run the code: 
+
+Headless Mode :  npx playwright test tests/applyJobs.spec.js 
+
+Headed Mode :  npx playwright test tests/applyJobs.spec.js --headed 
