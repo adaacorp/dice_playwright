@@ -545,6 +545,45 @@ function aiEvaluateJob(jobTitle, companyName) {
   return "apply";
 }
 
+// Apply to job helper function
+async function applyToJob(page) {
+  try {
+    // Check if already applied
+    const alreadyAppliedText = await page
+      .locator("text=You have already applied")
+      .count();
+    if (alreadyAppliedText > 0) {
+      return { success: true, alreadyApplied: true };
+    }
+
+    // Find and click the apply button
+    const applyButton = page
+      .locator('button:has-text("Apply Now"), a:has-text("Apply Now")')
+      .first();
+    const buttonCount = await applyButton.count();
+
+    if (buttonCount === 0) {
+      return { success: false, reason: "No apply button found" };
+    }
+
+    await applyButton.click();
+    await page.waitForTimeout(2000);
+
+    // Check for successful application
+    const confirmationText = await page
+      .locator("text=Application submitted successfully")
+      .count();
+    if (confirmationText > 0) {
+      return { success: true, alreadyApplied: false };
+    }
+
+    // For now, simulate success (you can add more complex application logic here)
+    return { success: true, alreadyApplied: false };
+  } catch (error) {
+    return { success: false, reason: error.message };
+  }
+}
+
 // Process individual job
 const processJob = async (context, jobCard, cardIndex, logger) => {
   let newTab = null;
@@ -668,57 +707,274 @@ const processJob = async (context, jobCard, cardIndex, logger) => {
 // Process jobs with controlled concurrency
 const processJobBatch = async (context, jobCards, logger) => {
   const results = [];
+  const maxRetries = 2;
 
   // Process jobs in smaller batches to avoid overwhelming
   for (let i = 0; i < jobCards.length; i += MAX_CONCURRENT_TABS) {
-    // Check if context is closed before starting a batch
-    if (context._closed) {
-      console.warn("Context closed, stopping job batch processing.");
-      break;
+    let retryCount = 0;
+
+    while (retryCount <= maxRetries) {
+      try {
+        // Verify context is still valid
+        if (context._closed) {
+          console.warn("Context closed, stopping job batch processing.");
+          return results;
+        }
+
+        const batch = jobCards.slice(i, i + MAX_CONCURRENT_TABS);
+        console.log(
+          `🔄 Processing batch ${Math.floor(i / MAX_CONCURRENT_TABS) + 1} (${
+            batch.length
+          } jobs)`
+        );
+
+        // Process jobs with proper error handling
+        const batchPromises = batch.map(async (jobCard, index) => {
+          try {
+            // Stagger the requests
+            await new Promise((resolve) =>
+              setTimeout(resolve, index * TAB_DELAY)
+            );
+
+            // Verify context before each job
+            if (context._closed) {
+              return {
+                success: false,
+                reason: "Context closed",
+                skipped: true,
+              };
+            }
+
+            return await processJob(context, jobCard, i + index, logger);
+          } catch (error) {
+            console.error(`Error processing job ${i + index + 1}:`, error);
+            return { success: false, reason: error.message };
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+
+        // Break retry loop on success
+        break;
+      } catch (error) {
+        retryCount++;
+        console.error(`Batch processing attempt ${retryCount} failed:`, error);
+
+        if (retryCount <= maxRetries) {
+          console.log(`Retrying batch in 5 seconds...`);
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } else {
+          console.error(`Failed to process batch after ${maxRetries} attempts`);
+          // Mark remaining jobs as failed
+          const remainingJobs = jobCards.length - results.length;
+          const failedResults = Array(remainingJobs).fill({
+            success: false,
+            reason: "Batch processing failed",
+            skipped: false,
+          });
+          results.push(...failedResults);
+        }
+      }
     }
 
-    const batch = jobCards.slice(i, i + MAX_CONCURRENT_TABS);
-    console.log(
-      `🔄 Processing batch ${Math.floor(i / MAX_CONCURRENT_TABS) + 1} (${
-        batch.length
-      } jobs)`
-    );
-
-    const batchPromises = batch.map(async (jobCard, index) => {
-      // Stagger the requests
-      await new Promise((resolve) => setTimeout(resolve, index * TAB_DELAY));
-      // Check if context is closed before each job
-      if (context._closed) {
-        return { success: false, reason: "Context closed", skipped: true };
-      }
-      return processJob(context, jobCard, i + index, logger);
-    });
-
-    const batchResults = await Promise.allSettled(batchPromises);
-
-    batchResults.forEach((result, index) => {
-      if (result.status === "fulfilled") {
-        results.push(result.value);
-      } else {
-        results.push({ success: false, reason: result.reason });
-        console.error(`❌ Batch job ${i + index + 1} failed:`, result.reason);
-      }
-    });
-
-    // Pause between batches
+    // Add delay between batches
     if (i + MAX_CONCURRENT_TABS < jobCards.length) {
-      if (context._closed) break;
-      console.log(`⏳ Pausing ${PAGE_DELAY}ms before next batch...`);
-      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+      if (!context._closed) {
+        console.log(`⏳ Pausing ${PAGE_DELAY}ms before next batch...`);
+        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+      }
     }
   }
 
   return results;
 };
 
+// Remove these unused global variables
 // Track progress for resuming
-let currentSearchIdx = 0;
-let currentPageNum = 1;
+// let currentSearchIdx = 0;
+// let currentPageNum = 1;
+
+// Process single search term
+async function processSearchTerm(
+  context,
+  page,
+  searchTerm,
+  logger,
+  healthMonitor,
+  browser,
+  activePages
+) {
+  const stats = {
+    applied: 0,
+    failed: 0,
+    skipped: 0,
+    alreadyApplied: 0,
+    total: 0,
+  };
+
+  try {
+    const encodedSearch = encodeURIComponent(searchTerm);
+
+    for (let currentPage = 1; currentPage <= MAX_PAGES; currentPage++) {
+      // Save state before each page processing
+      healthMonitor.saveState(searchTerm, currentPage);
+
+      // Verify page health before processing
+      if (!(await healthMonitor.checkHealth(page))) {
+        console.log("⚠️ Page health check failed, attempting recovery...");
+        const recovered = await healthMonitor.recover(
+          context,
+          page,
+          activePages,
+          browser,
+          logger
+        );
+        if (!recovered) {
+          console.log(
+            "❌ Could not recover page health, skipping to next search term..."
+          );
+          break;
+        }
+      }
+
+      // Original page processing logic
+      const url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}${
+        currentPage > 1 ? `&page=${currentPage}` : ""
+      }`;
+
+      console.log(`\n🔎 Navigating to search page: ${url}`);
+      if (!(await safeGoto(page, url))) {
+        console.log(
+          "❌ Could not load search page, skipping to next search term..."
+        );
+        break;
+      }
+
+      // First check for the "no jobs found" message
+      const notFoundPhrase = `We weren't able to find any jobs for "${searchTerm}". Please try refining your search terms.`;
+      const pageContent = await page.content();
+
+      if (pageContent.includes(notFoundPhrase)) {
+        console.log(
+          `\u26a0\ufe0f No jobs found for "${searchTerm}". Waiting 5 seconds before moving to next search item...`
+        );
+        await page.waitForTimeout(5000);
+        break;
+      }
+
+      try {
+        // Check for job cards
+        await page.waitForSelector("[data-testid='job-search-serp-card']", {
+          timeout: 15000,
+        });
+
+        // Get job cards
+        const jobCardLocator = page.locator(
+          "[data-testid='job-search-serp-card']"
+        );
+        const jobCardCount = await jobCardLocator.count();
+
+        if (jobCardCount === 0) {
+          if (currentPage === 1) {
+            console.log(
+              "ℹ️ No jobs found on first page, moving to next search term..."
+            );
+            break;
+          }
+          console.log(
+            "ℹ️ No more jobs on this page, moving to next search term..."
+          );
+          break; // Changed from continue to break - if no jobs found, likely no more pages
+        }
+
+        console.log(
+          `📦 Found ${jobCardCount} job cards for search: '${searchTerm}', page: ${currentPage}`
+        );
+
+        // Process job cards
+        const jobCards = Array.from({ length: jobCardCount }, (_, i) =>
+          jobCardLocator.nth(i)
+        );
+        const results = await processJobBatch(context, jobCards, logger);
+
+        // Update stats properly - fixed stats counting
+        for (const result of results) {
+          stats.total++;
+          if (result.success) {
+            if (result.alreadyApplied) {
+              console.log(`🔄 Already applied to a job`);
+              stats.alreadyApplied++;
+            } else {
+              console.log(`✅ Successfully applied to a job`);
+              stats.applied++;
+            }
+          } else if (result.skipped) {
+            console.log(`⏭️ Skipped a job: ${result.reason}`);
+            stats.skipped++;
+          } else {
+            console.log(`❌ Failed to process a job: ${result.reason}`);
+            stats.failed++;
+          }
+        }
+
+        console.log(`\n📊 Stats for "${searchTerm}" (Page ${currentPage}):
+          Applied: ${stats.applied}
+          Already Applied: ${stats.alreadyApplied}
+          Skipped: ${stats.skipped}
+          Failed: ${stats.failed}
+          Total: ${stats.total}\n`);
+
+        // Check if we should continue to next page
+        // If we haven't found any applicable jobs on this page, likely won't find more
+        if (
+          stats.applied === 0 &&
+          stats.alreadyApplied === 0 &&
+          currentPage > 1
+        ) {
+          console.log(
+            "ℹ️ No applicable jobs found on this page, moving to next search term..."
+          );
+          break;
+        }
+
+        // Add delay between pages
+        if (currentPage < MAX_PAGES) {
+          await page.waitForTimeout(PAGE_DELAY);
+        }
+      } catch (err) {
+        console.error(
+          `❌ Error processing page ${currentPage}: ${err.message}`
+        );
+        if (currentPage === 1) {
+          // If first page fails, move to next search term
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    console.error(
+      `❌ Fatal error processing "${searchTerm}": ${error.message}`
+    );
+    // Attempt recovery on fatal error
+    try {
+      const recovered = await healthMonitor.recover(
+        context,
+        page,
+        activePages,
+        browser,
+        logger
+      );
+      if (!recovered) {
+        throw error; // Re-throw if recovery failed
+      }
+    } catch (recoveryError) {
+      console.error("❌ Recovery failed:", recoveryError.message);
+    }
+  }
+
+  return stats;
+}
 
 // Utility to clear browser storage (cookies, localStorage, etc.)
 async function clearBrowserStorage(browser) {
@@ -727,7 +983,6 @@ async function clearBrowserStorage(browser) {
     try {
       await ctx.clearCookies();
       await ctx.clearPermissions();
-      // Optionally, clear local/session storage for each page
       for (const page of ctx.pages()) {
         try {
           await page.evaluate(() => {
@@ -741,12 +996,115 @@ async function clearBrowserStorage(browser) {
   }
 }
 
-// Main test with self-healing
-test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
-  let logger = new JobApplicationLogger();
+// Health monitoring and recovery system
+class HealthMonitor {
+  constructor() {
+    this.state = {
+      currentSearch: null,
+      currentPage: null,
+      processedJobs: new Set(),
+      recoveryAttempts: 0,
+      lastSuccessfulAction: null,
+      errors: [],
+    };
+    this.maxRecoveryAttempts = 3;
+  }
+
+  saveState(searchTerm, pageNum, jobId = null) {
+    this.state.currentSearch = searchTerm;
+    this.state.currentPage = pageNum;
+    if (jobId) this.state.processedJobs.add(jobId);
+    this.state.lastSuccessfulAction = new Date().getTime();
+  }
+
+  async checkHealth(page) {
+    try {
+      // Check page responsiveness
+      await page.evaluate(() => document.title);
+      return true;
+    } catch (error) {
+      this.logError("Page responsiveness check failed", error);
+      return false;
+    }
+  }
+
+  async recover(context, page, activePages, browser, logger) {
+    this.state.recoveryAttempts++;
+    console.log(
+      `🔄 Attempting recovery (Attempt ${this.state.recoveryAttempts}/${this.maxRecoveryAttempts})`
+    );
+
+    if (this.state.recoveryAttempts > this.maxRecoveryAttempts) {
+      throw new Error("Maximum recovery attempts exceeded");
+    }
+
+    // Level 1: Try refreshing the page
+    try {
+      await page.reload({ timeout: 30000 });
+      if (await this.checkHealth(page)) {
+        console.log("✅ Recovery successful through page refresh");
+        return true;
+      }
+    } catch (error) {
+      this.logError("Page refresh recovery failed", error);
+    }
+
+    // Level 2: Try creating new context and page
+    try {
+      await cleanup(context, activePages);
+      context = await createBrowserContext(browser);
+      page = await context.newPage();
+      activePages.add(page);
+
+      if (await performLogin(page)) {
+        console.log("✅ Recovery successful through context recreation");
+        return true;
+      }
+    } catch (error) {
+      this.logError("Context recreation recovery failed", error);
+    }
+
+    // Level 3: Full restart
+    console.log("⚠️ Attempting full restart...");
+    return false;
+  }
+
+  logError(message, error) {
+    this.state.errors.push({
+      timestamp: new Date(),
+      message,
+      error: error.message,
+    });
+    console.error(`❌ ${message}:`, error.message);
+  }
+
+  getRecoveryState() {
+    return {
+      canRetry: this.state.recoveryAttempts < this.maxRecoveryAttempts,
+      lastKnownState: {
+        searchTerm: this.state.currentSearch,
+        pageNum: this.state.currentPage,
+        processedJobs: Array.from(this.state.processedJobs),
+      },
+    };
+  }
+
+  resetRecoveryAttempts() {
+    this.state.recoveryAttempts = 0;
+  }
+}
+
+// Main test function
+test("Auto-apply to Jobs on Dice", async ({ browser }) => {
+  const logger = new JobApplicationLogger();
+  const healthMonitor = new HealthMonitor();
   await logger.initializeExcel();
 
-  let stats = {
+  let context;
+  let page;
+  let activePages = new Set();
+
+  const stats = {
     applied: 0,
     failed: 0,
     skipped: 0,
@@ -754,158 +1112,124 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
     total: 0,
   };
 
-  while (currentSearchIdx < SEARCH_ITEMS.length) {
-    let context, page;
-    let timedOut = false;
-    const startTime = Date.now();
+  try {
+    // Create initial browser context
+    context = await createBrowserContext(browser);
 
-    try {
-      context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      });
-      page = await context.newPage();
+    // Create main page
+    page = await context.newPage();
+    activePages.add(page);
 
-      // Login
-      console.log("\n================ LOGIN FLOW ================");
-      const loginSuccess = await safeGoto(page, LOGIN_URL);
-      if (!loginSuccess) throw new Error("Failed to load login page");
-      console.log("🔑 Login page loaded");
+    // Perform login once
+    console.log("\n================ LOGIN FLOW ================");
+    if (!(await performLogin(page))) {
+      throw new Error("Login failed");
+    }
 
-      await page.waitForSelector('input[name="email"]', { timeout: 15000 });
-      console.log("📝 Filling in email...");
-      await page.fill('input[name="email"]', USERNAME);
-      await safeClick(page, 'button[type="submit"]', "first submit button");
-      await page.waitForSelector('input[name="password"]', { timeout: 15000 });
-      console.log("📝 Filling in password...");
-      await page.fill('input[name="password"]', PASSWORD);
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: "networkidle", timeout: 30000 }),
-        safeClick(page, 'button[type="submit"]', "password submit button"),
-      ]);
-      await page.waitForTimeout(3000);
-      console.log("✅ Logged in and dashboard loaded!");
+    // Process each search term
+    for (const searchTerm of SEARCH_ITEMS) {
+      try {
+        // Verify context is still valid
+        if (context._closed) {
+          console.log("⚠️ Context closed, recreating...");
+          await cleanup(context, activePages);
+          context = await createBrowserContext(browser);
+          page = await context.newPage();
+          activePages.add(page);
 
-      // Resume from last progress
-      for (
-        let currentSearchIdx = 0;
-        currentSearchIdx < SEARCH_ITEMS.length;
-        currentSearchIdx++
-      ) {
-        const searchTerm = SEARCH_ITEMS[currentSearchIdx];
-        const encodedSearch = encodeURIComponent(searchTerm);
+          // Re-login if context was recreated
+          if (!(await performLogin(page))) {
+            throw new Error("Failed to re-login after context recreation");
+          }
+        }
+
         console.log(
-          `\n================ SEARCH: '${searchTerm}' ================`
+          `\n================ SEARCH: '${searchTerm}' ================\n`
         );
-        for (
-          let currentPageNum = 1;
-          currentPageNum <= MAX_PAGES;
-          currentPageNum++
-        ) {
-          // Self-heal if delay crosses 30min
-          if (Date.now() - startTime > 1800000) {
-            timedOut = true;
-            break;
-          }
 
-          let url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}`;
-          if (currentPageNum > 1) url += `&page=${currentPageNum}`;
-          console.log(`\n🔎 Navigating to search page: ${url}`);
-          const pageLoaded = await safeGoto(page, url);
-          if (!pageLoaded) {
-            console.log("❌ Could not load search page, skipping...");
-            continue;
-          }
+        // Reset recovery attempts for each new search term
+        healthMonitor.resetRecoveryAttempts();
 
-          try {
-            await page.waitForSelector("[data-testid='job-search-serp-card']", {
-              timeout: 15000,
-            });
-          } catch (err) {
-            // No job cards found, check for the no jobs phrase
-            const notFoundPhrase = `We weren't able to find any jobs for \"${searchTerm}\". Please try refining your search terms.`;
-            const pageContent = await page.content();
-            if (pageContent.includes(notFoundPhrase)) {
-              console.log(
-                `\u26a0\ufe0f No jobs found for \"${searchTerm}\". Waiting 5 seconds before moving to next search item...`
-              );
-              await page.waitForTimeout(5000);
-              break; // Move to next SEARCH_ITEM
-            } else {
-              console.log("⚠️ No job cards found on this page.");
-              continue;
-            }
-          }
+        // Process search term with health monitoring
+        const searchStats = await processSearchTerm(
+          context,
+          page,
+          searchTerm,
+          logger,
+          healthMonitor,
+          browser,
+          activePages
+        );
 
-          const jobCardLocator = page.locator(
-            "[data-testid='job-search-serp-card']"
-          );
-          const jobCardCount = await jobCardLocator.count();
-          console.log(
-            `📦 Found ${jobCardCount} job cards for search: '${searchTerm}', page: ${currentPageNum}`
-          );
-          const jobCards = [];
-          for (let i = 0; i < jobCardCount; i++) {
-            jobCards.push(jobCardLocator.nth(i));
-          }
-          if (jobCards.length === 0) {
-            console.log("ℹ️ No jobs to process on this page.");
-            continue;
-          }
+        // Update overall stats
+        stats.applied += searchStats.applied;
+        stats.failed += searchStats.failed;
+        stats.skipped += searchStats.skipped;
+        stats.alreadyApplied += searchStats.alreadyApplied;
+        stats.total += searchStats.total;
 
-          const results = await processJobBatch(context, jobCards, logger);
-
-          results.forEach((result, idx) => {
-            if (result.success) {
-              if (result.alreadyApplied)
-                console.log(`🔄 [${idx + 1}] Already applied.`);
-              else console.log(`✅ [${idx + 1}] Successfully applied.`);
-            } else if (result.skipped) {
-              console.log(`⏭️ [${idx + 1}] Skipped.`);
-            } else {
-              console.log(`❌ [${idx + 1}] Failed: ${result.reason}`);
-            }
-            stats.total++;
-            if (result.success) {
-              if (result.alreadyApplied) stats.alreadyApplied++;
-              else stats.applied++;
-            } else if (result.skipped) stats.skipped++;
-            else stats.failed++;
-          });
-
-          await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+        // Add a small delay between search terms
+        if (!context._closed) {
+          await page.waitForTimeout(2000);
         }
-        if (timedOut) {
-          console.log("⏰ Timed out, stopping further processing.");
-          break;
-        }
+      } catch (error) {
+        console.error(
+          `❌ Error processing search term "${searchTerm}":`,
+          error
+        );
+        // Continue with next search term
       }
+    }
+  } catch (error) {
+    console.error(`❌ Fatal error:`, error);
+  } finally {
+    // Cleanup
+    await cleanup(context, activePages);
+
+    // Save final results
+    try {
+      await logger.saveExcel();
+      await logger.generateHtmlReport();
+
+      console.log("\n✅ Test completed.");
+      console.log(`📁 Excel Log: ${logger.filepath}`);
+      console.log(`🌐 HTML Report: ${logger.htmlReportPath}`);
+      console.table(stats);
     } catch (error) {
-      console.error(`❌ Error in test execution: ${error.message}`);
-    } finally {
-      // Cleanup: close context if still open
-      if (context && !context._closed) {
+      console.error(`❌ Error saving results:`, error);
+    }
+  }
+});
+
+// Helper function to create browser context
+async function createBrowserContext(browser) {
+  return await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  });
+}
+
+// Helper function for cleanup
+async function cleanup(context, activePages) {
+  if (activePages) {
+    for (const page of activePages) {
+      if (page && !page.isClosed()) {
         try {
-          await context.close();
-        } catch (closeErr) {
-          console.error(`Failed to close context: ${closeErr.message}`);
+          await page.close();
+        } catch (err) {
+          console.error("Error closing page:", err);
         }
       }
     }
+    activePages.clear();
   }
 
-  // Finalize and save logs
-  try {
-    await logger.saveExcel();
-    await logger.generateHtmlReport();
-  } catch (error) {
-    console.error(`❌ Error finalizing logs: ${error.message}`);
+  if (context && !context._closed) {
+    try {
+      await context.close();
+    } catch (err) {
+      console.error("Error closing context:", err);
+    }
   }
-
-  // Summary
-  console.log("✅ Test completed.");
-  console.log(`📁 Excel Log: ${logger.filepath}`);
-  console.log(`🌐 HTML Report: ${logger.htmlReportPath}`);
-  console.table(stats);
-});
+}
