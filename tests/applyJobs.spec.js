@@ -12,6 +12,7 @@ const SEARCH_ITEMS = [
   "Automation",
   "SDET",
   "Performance",
+  "Manual Tester",
 ];
 
 const MAX_PAGES = 1; // Reduced for faster execution
@@ -192,6 +193,24 @@ class JobApplicationLogger {
 
   async generateHtmlReport() {
     try {
+      // Group jobs by search term
+      const jobsBySearch = {};
+      for (const search of SEARCH_ITEMS) {
+        jobsBySearch[search] = [];
+      }
+      for (const job of this.jobData) {
+        // Try to match job to a search term
+        const found = SEARCH_ITEMS.find((term) =>
+          (job.jobTitle || "").toLowerCase().includes(term.toLowerCase())
+        );
+        if (found) jobsBySearch[found].push(job);
+        else {
+          // If not matched, put in first group
+          jobsBySearch[SEARCH_ITEMS[0]].push(job);
+        }
+      }
+
+      // Summary counts
       const appliedJobs = this.jobData.filter(
         (j) => j.category === "success" || j.category === "already_applied"
       );
@@ -202,397 +221,120 @@ class JobApplicationLogger {
       const skippedJobs = this.jobData.filter((j) => j.category === "skipped");
       const unknownJobs = this.jobData.filter((j) => j.category === "unknown");
 
-      const summary = `
-        <div class="summary-cards">
-          <div class="card applied" data-type="applied">
-            <div class="count" id="applied-count">${appliedJobs.length}</div>
-            <div class="label">Applied</div>
+      // Cards
+      const summaryCards = `
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div class="bg-gray-700 p-6 rounded-lg shadow">
+            <h3 class="text-xl font-medium mb-2">Applied</h3>
+            <p class="text-3xl font-bold">${appliedJobs.length}</p>
           </div>
-          <div class="card already-applied" data-type="already_applied">
-            <div class="count" id="already-applied-count">${alreadyAppliedJobs.length}</div>
-            <div class="label">Already Applied</div>
+          <div class="bg-gray-700 p-6 rounded-lg shadow">
+            <h3 class="text-xl font-medium mb-2">Already Applied</h3>
+            <p class="text-3xl font-bold">${alreadyAppliedJobs.length}</p>
           </div>
-          <div class="card failed" data-type="failed">
-            <div class="count" id="failed-count">${failedJobs.length}</div>
-            <div class="label">Failed</div>
+          <div class="bg-gray-700 p-6 rounded-lg shadow">
+            <h3 class="text-xl font-medium mb-2">Failed</h3>
+            <p class="text-3xl font-bold">${failedJobs.length}</p>
           </div>
-          <div class="card skipped" data-type="skipped">
-            <div class="count" id="skipped-count">${skippedJobs.length}</div>
-            <div class="label">Skipped</div>
+          <div class="bg-gray-700 p-6 rounded-lg shadow">
+            <h3 class="text-xl font-medium mb-2">Skipped</h3>
+            <p class="text-3xl font-bold">${skippedJobs.length}</p>
           </div>
         </div>
       `;
 
-      // Pie chart data
-      const pieData = {
-        applied: appliedJobs.length,
-        alreadyApplied: alreadyAppliedJobs.length,
-        failed: failedJobs.length,
-        skipped: skippedJobs.length,
-        unknown: unknownJobs.length,
-      };
+      // Collapsible sections for each SEARCH_ITEM
+      let searchSections = "";
+      for (const search of SEARCH_ITEMS) {
+        const jobs = jobsBySearch[search];
+        searchSections += `
+        <div class="mb-4">
+          <button class="w-full flex justify-between items-center bg-gray-800 px-4 py-3 rounded-t-lg focus:outline-none group" onclick="const c=document.getElementById('section-${search.replace(
+            /\s+/g,
+            "-"
+          )}');c.style.display=c.style.display==='none'?'':'none';this.querySelector('svg').classList.toggle('rotate-180')">
+            <span class="text-lg font-semibold">${search} <span class="ml-2 text-xs text-gray-400">(${
+          jobs.length
+        })</span></span>
+            <svg class="w-5 h-5 ml-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div id="section-${search.replace(
+            /\s+/g,
+            "-"
+          )}" class="bg-gray-700 rounded-b-lg p-4" style="display:none;">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="bg-gray-600">
+                    <th class="px-3 py-2">#</th>
+                    <th class="px-3 py-2">Job Title</th>
+                    <th class="px-3 py-2">Company</th>
+                    <th class="px-3 py-2">Status</th>
+                    <th class="px-3 py-2">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${jobs
+                    .map(
+                      (j) => `
+                    <tr class="border-b border-gray-600 ${j.category}">
+                      <td class="px-3 py-2">${j.serialNo}</td>
+                      <td class="px-3 py-2">${j.jobTitle}</td>
+                      <td class="px-3 py-2">${j.companyName}</td>
+                      <td class="px-3 py-2">${j.status}</td>
+                      <td class="px-3 py-2">${j.timestamp}</td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        `;
+      }
 
-      // Details dropdown for each row
-      const tableRows = this.jobData
-        .map(
-          (j, idx) => `
-          <tr class="${j.category} main-row" data-idx="${idx}">
-            <td>
-              <button class="expand-btn" title="Show Details">+</button>
-              ${j.serialNo}
-            </td>
-            <td>${j.jobTitle}</td>
-            <td>${j.companyName}</td>
-            <td>${j.status}</td>
-            <td>${j.timestamp}</td>
-          </tr>
-          <tr class="details-row" style="display:none;">
-            <td colspan="5">
-              <div class="details-content">
-                <strong>Job Title:</strong> ${j.jobTitle}<br>
-                <strong>Company:</strong> ${j.companyName}<br>
-                <strong>Status:</strong> ${j.status}<br>
-                <strong>Timestamp:</strong> ${j.timestamp}<br>
-                <strong>Category:</strong> ${j.category}
-              </div>
-            </td>
-          </tr>
-        `
-        )
-        .join("");
-
-      const appliedRows = appliedJobs
-        .map(
-          (j, idx) => `
-          <tr class="main-row" data-idx="${idx}">
-            <td>
-              <button class="expand-btn" title="Show Details">+</button>
-              ${j.serialNo}
-            </td>
-            <td>${j.jobTitle}</td>
-            <td>${j.companyName}</td>
-            <td>${j.status}</td>
-            <td>${j.timestamp}</td>
-          </tr>
-          <tr class="details-row" style="display:none;">
-            <td colspan="5">
-              <div class="details-content">
-                <strong>Job Title:</strong> ${j.jobTitle}<br>
-                <strong>Company:</strong> ${j.companyName}<br>
-                <strong>Status:</strong> ${j.status}<br>
-                <strong>Timestamp:</strong> ${j.timestamp}<br>
-                <strong>Category:</strong> ${j.category}
-              </div>
-            </td>
-          </tr>
-        `
-        )
-        .join("");
-
+      // HTML
       const html = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8" />
-        <title>Job Application Dashboard Report</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <style>
-          body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: #f4f8fb;
-            margin: 0;
-            padding: 0;
-          }
-          .container {
-            max-width: 1200px;
-            margin: 30px auto;
-            background: #fff;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-            padding: 32px 40px 40px 40px;
-          }
-          h1 {
-            text-align: center;
-            color: #2a5298;
-            margin-bottom: 10px;
-          }
-          .summary-cards {
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            margin: 30px 0 40px 0;
-          }
-          .card {
-            background: #f7fafd;
-            border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(44, 62, 80, 0.08);
-            padding: 24px 36px;
-            text-align: center;
-            min-width: 120px;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            opacity: 0;
-            transform: translateY(40px) scale(0.95);
-            animation: cardFadeIn 0.7s forwards;
-          }
-          .card.applied { border-top: 4px solid #4caf50; animation-delay: 0.1s;}
-          .card.already-applied { border-top: 4px solid #ff9800; animation-delay: 0.2s;}
-          .card.failed { border-top: 4px solid #e53935; animation-delay: 0.3s;}
-          .card.skipped { border-top: 4px solid #fbc02d; animation-delay: 0.4s;}
-          .card .count {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #2a5298;
-            transition: color 0.3s;
-          }
-          .card .label {
-            font-size: 1.1em;
-            color: #555;
-            margin-top: 6px;
-          }
-          .card:hover {
-            transform: translateY(-4px) scale(1.03);
-            box-shadow: 0 4px 16px rgba(44, 62, 80, 0.13);
-          }
-          @keyframes cardFadeIn {
-            to {
-              opacity: 1;
-              transform: translateY(0) scale(1);
-            }
-          }
-          .chart-section {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 40px;
-          }
-          .section {
-            margin-bottom: 40px;
-          }
-          .section h2 {
-            color: #2a5298;
-            border-bottom: 2px solid #e3eaf2;
-            padding-bottom: 8px;
-            margin-bottom: 18px;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            background: #fff;
-            margin-bottom: 16px;
-          }
-          th, td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #e3eaf2;
-            text-align: left;
-          }
-          th {
-            background: #e3eaf2;
-            color: #2a5298;
-            font-weight: 600;
-          }
-          tr.success, tr.already_applied { background: #eafaf1; }
-          tr.failed { background: #fdeaea; }
-          tr.skipped { background: #fffbe7; }
-          tr.unknown { background: #f5f5f5; }
-          tr:hover { background: #f1f7ff; }
-          .expand-btn {
-            background: #2a5298;
-            color: #fff;
-            border: none;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            font-size: 1.1em;
-            cursor: pointer;
-            margin-right: 6px;
-            transition: background 0.2s;
-          }
-          .expand-btn:hover {
-            background: #4caf50;
-          }
-          .details-row {
-            background: #f9f9fc;
-            transition: display 0.3s;
-          }
-          .details-content {
-            padding: 10px 0 10px 10px;
-            font-size: 1em;
-            color: #333;
-          }
-          .footer {
-            text-align: center;
-            color: #888;
-            margin-top: 40px;
-            font-size: 0.95em;
-          }
-        </style>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DashDarkX - Job Dashboard</title>
+        <script src="https://cdn.tailwindcss.com"></script>
       </head>
-      <body>
-        <div class="container">
-          <h1>Job Application Dashboard Report</h1>
-          ${summary}
-          <div class="chart-section">
-            <canvas id="pieChart" width="320" height="320"></canvas>
-          </div>
-          <div class="section">
-            <h2>Applied Jobs</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Sr.No</th>
-                  <th>Job Title</th>
-                  <th>Company Name</th>
-                  <th>Status</th>
-                  <th>Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${
-                  appliedRows ||
-                  "<tr><td colspan='5'>No jobs applied.</td></tr>"
-                }
-              </tbody>
-            </table>
-          </div>
-          <div class="section">
-            <h2>Complete Log</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Sr.No</th>
-                  <th>Job Title</th>
-                  <th>Company Name</th>
-                  <th>Status</th>
-                  <th>Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows}
-              </tbody>
-            </table>
-          </div>
-          <div class="footer">
-            Generated on ${new Date().toLocaleString()}
-          </div>
+      <body class="bg-gray-900 text-gray-100 font-sans">
+        <div class="flex min-h-screen">
+          <aside class="w-64 bg-gray-800 p-5">
+            <h1 class="text-2xl font-bold mb-8">DashDarkX</h1>
+            <nav class="space-y-4">
+              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Dashboard</a>
+              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Analytics</a>
+              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Reports</a>
+              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Settings</a>
+            </nav>
+          </aside>
+          <main class="flex-1 p-10">
+            <header class="mb-6">
+              <h2 class="text-3xl font-semibold">Overview</h2>
+            </header>
+            ${summaryCards}
+            <div class="bg-gray-700 p-6 rounded-lg shadow mb-8">
+              <h3 class="text-xl font-medium mb-4">Traffic Overview</h3>
+              <div class="h-64 bg-gray-600 flex items-center justify-center rounded">
+                <span class="text-gray-400">[Chart goes here]</span>
+              </div>
+            </div>
+            <h2 class="text-2xl font-semibold mb-4">Jobs by Search Term</h2>
+            ${searchSections}
+            <div class="mt-10 text-center text-gray-400 text-xs">Generated on ${new Date().toLocaleString()}</div>
+          </main>
         </div>
-        <script>
-          // Animate summary card numbers
-          function animateCount(id, target) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            let count = 0;
-            const step = Math.ceil(target / 40) || 1;
-            const interval = setInterval(() => {
-              count += step;
-              if (count >= target) {
-                el.textContent = target;
-                clearInterval(interval);
-              } else {
-                el.textContent = count;
-              }
-            }, 18);
-          }
-          animateCount('applied-count', ${pieData.applied});
-          animateCount('already-applied-count', ${pieData.alreadyApplied});
-          animateCount('failed-count', ${pieData.failed});
-          animateCount('skipped-count', ${pieData.skipped});
-
-          // Pie Chart
-          const ctx = document.getElementById('pieChart').getContext('2d');
-          const pieChart = new Chart(ctx, {
-            type: 'pie',
-            data: {
-              labels: ['Applied', 'Already Applied', 'Failed', 'Skipped', 'Unknown'],
-              datasets: [{
-                data: [${pieData.applied}, ${pieData.alreadyApplied}, ${
-        pieData.failed
-      }, ${pieData.skipped}, ${pieData.unknown}],
-                backgroundColor: [
-                  '#4caf50',
-                  '#ff9800',
-                  '#e53935',
-                  '#fbc02d',
-                  '#bdbdbd'
-                ],
-                borderWidth: 1
-              }]
-            },
-            options: {
-              responsive: false,
-              plugins: {
-                legend: {
-                  display: true,
-                  position: 'bottom'
-                },
-                tooltip: {
-                  callbacks: {
-                    label: function(context) {
-                      const label = context.label || '';
-                      const value = context.parsed || 0;
-                      return label + ': ' + value;
-                    }
-                  }
-                }
-              }
-            }
-          });
-
-          // Card click filters table
-          document.querySelectorAll('.summary-cards .card').forEach(card => {
-            card.addEventListener('click', function() {
-              const type = card.getAttribute('data-type');
-              // Show only rows of this type in Complete Log
-              document.querySelectorAll('.section:last-of-type tbody tr.main-row').forEach((row, idx) => {
-                const cat = row.className.trim();
-                if (type === 'applied') {
-                  // Show both success and already_applied
-                  row.style.display = (cat === 'success' || cat === 'already_applied') ? '' : 'none';
-                  if(row.nextElementSibling && row.nextElementSibling.classList.contains('details-row')) {
-                    row.nextElementSibling.style.display = (cat === 'success' || cat === 'already_applied') ? 'none' : 'none';
-                  }
-                } else {
-                  row.style.display = (cat === type) ? '' : 'none';
-                  if(row.nextElementSibling && row.nextElementSibling.classList.contains('details-row')) {
-                    row.nextElementSibling.style.display = (cat === type) ? 'none' : 'none';
-                  }
-                }
-              });
-            });
-          });
-
-          // Expand/collapse details
-          document.querySelectorAll('.expand-btn').forEach((btn, idx) => {
-            btn.addEventListener('click', function(e) {
-              e.preventDefault();
-              const mainRow = btn.closest('tr');
-              const detailsRow = mainRow.nextElementSibling;
-              if (!detailsRow) return;
-              if (detailsRow.style.display === 'none') {
-                detailsRow.style.display = '';
-                btn.textContent = '-';
-                btn.title = "Hide Details";
-              } else {
-                detailsRow.style.display = 'none';
-                btn.textContent = '+';
-                btn.title = "Show Details";
-              }
-            });
-          });
-
-          // Reset filter on double click anywhere
-          document.querySelector('.summary-cards').addEventListener('dblclick', function() {
-            document.querySelectorAll('.section:last-of-type tbody tr.main-row').forEach(row => {
-              row.style.display = '';
-              if(row.nextElementSibling && row.nextElementSibling.classList.contains('details-row')) {
-                row.nextElementSibling.style.display = 'none';
-              }
-            });
-          });
-        </script>
       </body>
       </html>
       `;
-
       fs.writeFileSync(this.htmlReportPath, html, "utf-8");
       console.log(`✅ HTML dashboard report generated: ${this.htmlReportPath}`);
     } catch (err) {
@@ -1046,8 +788,9 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
         const encodedSearch = encodeURIComponent(searchTerm);
 
         for (; currentPageNum <= MAX_PAGES; currentPageNum++) {
-          // Self-heal if delay crosses 15min
-          if (Date.now() - startTime > 900000) {
+          // Self-heal if delay crosses 30min
+          if (Date.now() - startTime > 1800000) {
+            // 30min in ms
             timedOut = true;
             break;
           }
@@ -1088,215 +831,36 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
 
           await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
         }
-        if (timedOut) break;
-        currentPageNum = 1; // reset for next search term
+        if (timedOut) {
+          console.log("⏰ Timed out, stopping further processing.");
+          break;
+        }
       }
     } catch (error) {
-      console.error(`❌ Main test error: ${error.message}`);
-      await logger.logJob("System Error", "System", `Error: ${error.message}`);
-      await logger.saveExcel();
+      console.error(`❌ Error in test execution: ${error.message}`);
     } finally {
-      if (context) {
+      // Cleanup: close context if still open
+      if (context && !context._closed) {
         try {
           await context.close();
-        } catch {}
+        } catch (closeErr) {
+          console.error(`Failed to close context: ${closeErr.message}`);
+        }
       }
     }
-
-    if (timedOut) {
-      console.log(
-        "🛑 15min exceeded. Self-healing: closing browsers, clearing storage..."
-      );
-      await clearBrowserStorage(browser);
-      console.log("⏳ Waiting 1 minute before restart...");
-      await new Promise((resolve) => setTimeout(resolve, 60000));
-      console.log("⏳ Waiting 30 seconds after new context...");
-      await new Promise((resolve) => setTimeout(resolve, 30000));
-      // Continue loop, resume from currentSearchIdx/currentPageNum
-    } else {
-      // Finished all, break loop
-      break;
-    }
   }
 
-  await logger.saveExcel();
-  await logger.generateHtmlReport();
-
-  // ...existing summary output...
-  console.log("\n" + "=".repeat(70));
-  console.log("📊 FINAL SUMMARY");
-  console.log("=".repeat(70));
-  console.log(`📝 Total Jobs Processed: ${stats.total}`);
-  console.log(`✅ Successfully Applied: ${stats.applied}`);
-  console.log(`🔄 Already Applied: ${stats.alreadyApplied}`);
-  console.log(`❌ Failed Applications: ${stats.failed}`);
-  console.log(`⏭️ Skipped (No Match): ${stats.skipped}`);
-  if (stats.total > 0) {
-    console.log(
-      `🎯 Success Rate: ${((stats.applied / stats.total) * 100).toFixed(1)}%`
-    );
-  }
-  console.log("=".repeat(70));
-});
-
-// Enhanced job application function
-async function applyToJob(page) {
+  // Finalize and save logs
   try {
-    if (page.isClosed()) {
-      return { success: false, reason: "Page is closed" };
-    }
-
-    console.log(`🎯 Attempting to apply to job: ${page.url()}`);
-    await page.waitForTimeout(2000);
-
-    // Check if already applied first
-    const alreadyAppliedSelectors = [
-      "text=You have already applied",
-      "text=Application submitted",
-      "text=Already applied",
-      ".already-applied",
-      "[data-testid='already-applied']",
-      "text=Application received",
-      "text=Applied",
-    ];
-
-    for (const selector of alreadyAppliedSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          console.log(`ℹ️ Already applied to this job`);
-          return { success: true, alreadyApplied: true };
-        }
-      } catch (err) {
-        // Continue checking
-      }
-    }
-
-    // Find and click Apply button
-    const applySelectors = [
-      "#applyButton",
-      "apply-button-wc",
-      "button:has-text('Easy apply')",
-      "button:has-text('Apply now')",
-      "button:has-text('Apply')",
-      "[data-testid='apply-button']",
-      ".apply-button",
-      "button[data-testid='easy-apply']",
-      "input[value*='Apply']",
-    ];
-
-    let applyClicked = false;
-    for (const selector of applySelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          await element.click();
-          console.log(`✅ Clicked apply button: ${selector}`);
-          applyClicked = true;
-          await page.waitForTimeout(3000);
-          break;
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    if (!applyClicked) {
-      return { success: false, reason: "No Apply button found" };
-    }
-
-    // Handle potential Next/Continue button
-    const nextSelectors = [
-      "button:has-text('Next')",
-      "button:has-text('Continue')",
-      "[data-testid='next-button']",
-      ".next-button",
-      "input[value*='Next']",
-    ];
-
-    for (const selector of nextSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          await element.click();
-          console.log(`✅ Clicked next button: ${selector}`);
-          await page.waitForTimeout(3000);
-          break;
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    // Handle Submit button
-    const submitSelectors = [
-      "button:has-text('Submit')",
-      "button:has-text('Submit Application')",
-      "input[type='submit']",
-      "[data-testid='submit-button']",
-      ".submit-button",
-      "button:has-text('Send Application')",
-      "button:has-text('Apply Now')",
-      "input[value*='Submit']",
-    ];
-
-    for (const selector of submitSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          await element.click();
-          console.log(`✅ Clicked submit button: ${selector}`);
-          await page.waitForTimeout(4000);
-          break;
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    // Check for success confirmation
-    const confirmationSelectors = [
-      ".post-apply-banner",
-      "[data-testid='application-confirmation']",
-      ".application-success",
-      ".confirmation-message",
-      "text=Application submitted",
-      "text=Successfully applied",
-      "text=Application received",
-      "text=Thank you for applying",
-      "text=Your application has been submitted",
-      "text=Application sent",
-    ];
-
-    for (const selector of confirmationSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 5000 });
-        console.log(`✅ Application confirmation found: ${selector}`);
-        return { success: true, alreadyApplied: false };
-      } catch (err) {
-        continue;
-      }
-    }
-
-    // Check URL for success indicators
-    const currentUrl = page.url();
-    if (
-      currentUrl.includes("success") ||
-      currentUrl.includes("applied") ||
-      currentUrl.includes("confirmation") ||
-      currentUrl.includes("thank-you")
-    ) {
-      console.log(`✅ Success indicated by URL: ${currentUrl}`);
-      return { success: true, alreadyApplied: false };
-    }
-
-    // If we get here, assume success but couldn't verify
-    console.log(
-      `⚠️ Application attempt completed, but couldn't verify success`
-    );
-    return { success: true, alreadyApplied: false };
-  } catch (err) {
-    console.error(`❌ Error during job application: ${err.message}`);
-    return { success: false, reason: err.message };
+    await logger.saveExcel();
+    await logger.generateHtmlReport();
+  } catch (error) {
+    console.error(`❌ Error finalizing logs: ${error.message}`);
   }
-}
+
+  // Summary
+  console.log("✅ Test completed.");
+  console.log(`📁 Excel Log: ${logger.filepath}`);
+  console.log(`🌐 HTML Report: ${logger.htmlReportPath}`);
+  console.table(stats);
+});

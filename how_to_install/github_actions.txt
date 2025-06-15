@@ -19,5 +19,5 @@ git push -u origin main
 HOW TO PUSH YOU CODE ON TO GITHUB
 
 git add .
-git commit -m "Your commit message"
+git commit -m "Playwright_DICE_Automation"
 git push origin main
