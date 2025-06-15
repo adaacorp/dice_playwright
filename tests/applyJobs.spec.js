@@ -1,4 +1,6 @@
-// tests/applyJobs.spec.js
+// Dice Job Application Automation Script
+// This script automates job applications on Dice.com using Playwright and logs results in an Excel file.
+// It includes enhanced error handling, logging, and HTML report generation.
 
 const { test, expect } = require("@playwright/test");
 const ExcelJS = require("exceljs");
@@ -6,25 +8,37 @@ const fs = require("fs");
 const path = require("path");
 
 const SEARCH_ITEMS = [
-  // Focus on most relevant QA/Testing roles to reduce total jobs processed
+  // General QA / Testing Roles
   "Software Tester",
-  "QA",
-  "Automation",
-  "SDET",
-  "Performance",
+  "Quality",
+  "Test Analyst",
   "Manual Tester",
+  "QA",
+
+  // Automation-Focused Roles
+  "Automation",
+  "Test Automation",
+
+  // SDET-Focused Titles
+  "SDET",
+  "Software Developer Engineer in Test",
+
+  // Performance Testing Roles
+  "Performance",
+  "Load",
+  "Stress",
 ];
 
-const MAX_PAGES = 3; // Increased for more coverage
+const MAX_PAGES = 3; // Reduced for stability
 const LOGIN_URL = "https://www.dice.com/dashboard/login";
 const USERNAME = "amar.sdet1@gmail.com"; // Replace with your Dice username
 const PASSWORD = "Admin@lcl25"; // Replace with your Dice password
-const MAX_CONCURRENT_TABS = 3; // Increased concurrency for speed
-const TAB_DELAY = 1000; // Reduced delay between tabs
-const PAGE_DELAY = 1500; // Reduced delay between pages
+const MAX_CONCURRENT_TABS = 2; // Reduced concurrency
+const TAB_DELAY = 2000; // Increased delay
+const PAGE_DELAY = 3000; // Added page delay
 
-// Increased test timeout (optional, but should not be needed with above changes)
-test.setTimeout(7200000); // 2 hours
+// Increased test timeout
+test.setTimeout(900000); // 15 minutes
 
 class JobApplicationLogger {
   constructor() {
@@ -193,27 +207,7 @@ class JobApplicationLogger {
 
   async generateHtmlReport() {
     try {
-      // Group jobs by search term
-      const jobsBySearch = {};
-      for (const search of SEARCH_ITEMS) {
-        jobsBySearch[search] = [];
-      }
-      for (const job of this.jobData) {
-        // Try to match job to a search term
-        const found = SEARCH_ITEMS.find((term) =>
-          (job.jobTitle || "").toLowerCase().includes(term.toLowerCase())
-        );
-        if (found) jobsBySearch[found].push(job);
-        else {
-          // If not matched, put in first group
-          jobsBySearch[SEARCH_ITEMS[0]].push(job);
-        }
-      }
-
-      // Summary counts
-      const appliedJobs = this.jobData.filter(
-        (j) => j.category === "success" || j.category === "already_applied"
-      );
+      const appliedJobs = this.jobData.filter((j) => j.category === "success");
       const alreadyAppliedJobs = this.jobData.filter(
         (j) => j.category === "already_applied"
       );
@@ -221,120 +215,442 @@ class JobApplicationLogger {
       const skippedJobs = this.jobData.filter((j) => j.category === "skipped");
       const unknownJobs = this.jobData.filter((j) => j.category === "unknown");
 
-      // Cards
-      const summaryCards = `
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div class="bg-gray-700 p-6 rounded-lg shadow">
-            <h3 class="text-xl font-medium mb-2">Applied</h3>
-            <p class="text-3xl font-bold">${appliedJobs.length}</p>
-          </div>
-          <div class="bg-gray-700 p-6 rounded-lg shadow">
-            <h3 class="text-xl font-medium mb-2">Already Applied</h3>
-            <p class="text-3xl font-bold">${alreadyAppliedJobs.length}</p>
-          </div>
-          <div class="bg-gray-700 p-6 rounded-lg shadow">
-            <h3 class="text-xl font-medium mb-2">Failed</h3>
-            <p class="text-3xl font-bold">${failedJobs.length}</p>
-          </div>
-          <div class="bg-gray-700 p-6 rounded-lg shadow">
-            <h3 class="text-xl font-medium mb-2">Skipped</h3>
-            <p class="text-3xl font-bold">${skippedJobs.length}</p>
-          </div>
-        </div>
-      `;
+      const stats = {
+        applied: appliedJobs.length,
+        alreadyApplied: alreadyAppliedJobs.length,
+        failed: failedJobs.length,
+        skipped: skippedJobs.length,
+        unknown: unknownJobs.length,
+      };
 
-      // Collapsible sections for each SEARCH_ITEM
-      let searchSections = "";
-      for (const search of SEARCH_ITEMS) {
-        const jobs = jobsBySearch[search];
-        searchSections += `
-        <div class="mb-4">
-          <button class="w-full flex justify-between items-center bg-gray-800 px-4 py-3 rounded-t-lg focus:outline-none group" onclick="const c=document.getElementById('section-${search.replace(
-            /\s+/g,
-            "-"
-          )}');c.style.display=c.style.display==='none'?'':'none';this.querySelector('svg').classList.toggle('rotate-180')">
-            <span class="text-lg font-semibold">${search} <span class="ml-2 text-xs text-gray-400">(${
-          jobs.length
-        })</span></span>
-            <svg class="w-5 h-5 ml-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          </button>
-          <div id="section-${search.replace(
-            /\s+/g,
-            "-"
-          )}" class="bg-gray-700 rounded-b-lg p-4" style="display:none;">
-            <div class="overflow-x-auto">
-              <table class="min-w-full text-sm">
-                <thead>
-                  <tr class="bg-gray-600">
-                    <th class="px-3 py-2">#</th>
-                    <th class="px-3 py-2">Job Title</th>
-                    <th class="px-3 py-2">Company</th>
-                    <th class="px-3 py-2">Status</th>
-                    <th class="px-3 py-2">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${jobs
-                    .map(
-                      (j) => `
-                    <tr class="border-b border-gray-600 ${j.category}">
-                      <td class="px-3 py-2">${j.serialNo}</td>
-                      <td class="px-3 py-2">${j.jobTitle}</td>
-                      <td class="px-3 py-2">${j.companyName}</td>
-                      <td class="px-3 py-2">${j.status}</td>
-                      <td class="px-3 py-2">${j.timestamp}</td>
-                    </tr>
-                  `
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        `;
-      }
+      // Group jobs by search term
+      const jobsBySearchTerm = {};
+      SEARCH_ITEMS.forEach((term) => {
+        jobsBySearchTerm[term] = this.jobData.filter((job) =>
+          job.jobTitle.toLowerCase().includes(term.toLowerCase())
+        );
+      });
 
-      // HTML
-      const html = `
-      <!DOCTYPE html>
+      const html = `<!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>DashDarkX - Job Dashboard</title>
+        <title>Job Application Dashboard</title>
+        <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+        <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+        <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+        <script src="https://unpkg.com/framer-motion@10.12.18/dist/framer-motion.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+          :root {
+            --primary-color: #6366f1;
+            --secondary-color: #818cf8;
+            --success-color: #22c55e;
+            --warning-color: #eab308;
+            --danger-color: #ef4444;
+            --background-color: #f8fafc;
+          }
+
+          body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            margin: 0;
+            padding: 0;
+          }
+
+          .card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+          }
+
+          .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+          }
+
+          .stats-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+          }
+
+          .chart-container {
+            position: relative;
+            margin: auto;
+            height: 300px;
+            width: 100%;
+          }
+
+          .tab {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+          }
+
+          .tab.active {
+            background-color: var(--primary-color);
+            color: white;
+          }
+
+          .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            padding: 1.5rem;
+          }
+
+          @keyframes fadeUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          .fade-up {
+            animation: fadeUp 0.5s ease forwards;
+          }
+
+          .chart-animation {
+            animation: scaleIn 0.5s ease forwards;
+          }
+
+          @keyframes scaleIn {
+            from {
+              transform: scale(0.9);
+              opacity: 0;
+            }
+            to {
+              transform: scale(1);
+              opacity: 1;
+            }
+          }
+
+          .search-filter {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+          }
+
+          .stats-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          }
+
+          @media (max-width: 768px) {
+            .grid-container {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
       </head>
-      <body class="bg-gray-900 text-gray-100 font-sans">
-        <div class="flex min-h-screen">
-          <aside class="w-64 bg-gray-800 p-5">
-            <h1 class="text-2xl font-bold mb-8">DashDarkX</h1>
-            <nav class="space-y-4">
-              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Dashboard</a>
-              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Analytics</a>
-              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Reports</a>
-              <a href="#" class="block py-2 px-4 rounded hover:bg-gray-700">Settings</a>
-            </nav>
-          </aside>
-          <main class="flex-1 p-10">
-            <header class="mb-6">
-              <h2 class="text-3xl font-semibold">Overview</h2>
-            </header>
-            ${summaryCards}
-            <div class="bg-gray-700 p-6 rounded-lg shadow mb-8">
-              <h3 class="text-xl font-medium mb-4">Traffic Overview</h3>
-              <div class="h-64 bg-gray-600 flex items-center justify-center rounded">
-                <span class="text-gray-400">[Chart goes here]</span>
+      <body>
+        <div id="root"></div>
+
+        <script type="text/babel">
+          const { useState, useEffect, useRef } = React;
+          const { motion, AnimatePresence } = Motion;
+
+          function DashboardCard({ title, value, icon, color }) {
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="card stats-card p-6"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-gray-500 text-sm font-medium">{title}</h3>
+                    <p className="stats-number mt-2">{value}</p>
+                  </div>
+                  <div className={\`p-3 rounded-full bg-\${color}-100\`}>
+                    <svg className={\`w-6 h-6 text-\${color}-600\`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      {icon}
+                    </svg>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          }
+
+          function ChartSection({ data }) {
+            const chartRef = useRef(null);
+
+            useEffect(() => {
+              if (chartRef.current) {
+                const ctx = chartRef.current.getContext('2d');
+                new Chart(ctx, {
+                  type: 'doughnut',
+                  data: {
+                    labels: ['Applied', 'Already Applied', 'Failed', 'Skipped'],
+                    datasets: [{
+                      data: [data.applied, data.alreadyApplied, data.failed, data.skipped],
+                      backgroundColor: [
+                        'rgba(99, 102, 241, 0.8)',
+                        'rgba(234, 179, 8, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                        'rgba(129, 140, 248, 0.8)'
+                      ],
+                      borderWidth: 0
+                    }]
+                  },
+                  options: {
+                    responsive: true,
+                    plugins: {
+                      legend: {
+                        position: 'bottom'
+                      }
+                    },
+                    animation: {
+                      animateScale: true,
+                      animateRotate: true
+                    }
+                  }
+                });
+              }
+            }, []);
+
+            return (
+              <div className="card p-6">
+                <h3 className="text-lg font-semibold mb-4">Application Distribution</h3>
+                <div className="chart-container">
+                  <canvas ref={chartRef}></canvas>
+                </div>
               </div>
-            </div>
-            <h2 class="text-2xl font-semibold mb-4">Jobs by Search Term</h2>
-            ${searchSections}
-            <div class="mt-10 text-center text-gray-400 text-xs">Generated on ${new Date().toLocaleString()}</div>
-          </main>
-        </div>
+            );
+          }
+
+          function ApplicationsTable({ jobs, searchTerm, statusFilter }) {
+            const filteredJobs = jobs.filter(job => {
+              const matchesSearch = !searchTerm || 
+                job.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.companyName.toLowerCase().includes(searchTerm.toLowerCase());
+              const matchesStatus = !statusFilter || job.category === statusFilter;
+              return matchesSearch && matchesStatus;
+            });
+
+            return (
+              <div className="card p-6 overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3">Job Title</th>
+                      <th className="text-left p-3">Company</th>
+                      <th className="text-left p-3">Status</th>
+                      <th className="text-left p-3">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredJobs.map((job, index) => (
+                      <motion.tr
+                        key={index}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="border-b hover:bg-gray-50"
+                      >
+                        <td className="p-3">{job.jobTitle}</td>
+                        <td className="p-3">{job.companyName}</td>
+                        <td className="p-3">
+                          <span className={\`px-2 py-1 rounded-full text-sm \${
+                            job.category === 'success' ? 'bg-green-100 text-green-800' :
+                            job.category === 'already_applied' ? 'bg-yellow-100 text-yellow-800' :
+                            job.category === 'failed' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                          }\`}>
+                            {job.status}
+                          </span>
+                        </td>
+                        <td className="p-3">{job.timestamp}</td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+
+          function Dashboard() {
+            const [activeTab, setActiveTab] = useState('overview');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState('');
+            const [selectedSearchItem, setSelectedSearchItem] = useState('');
+
+            const stats = ${JSON.stringify(stats)};
+            const jobs = ${JSON.stringify(this.jobData)};
+            const searchItems = ${JSON.stringify(SEARCH_ITEMS)};
+            const jobsBySearchTerm = ${JSON.stringify(jobsBySearchTerm)};
+
+            return (
+              <div className="min-h-screen bg-gray-50">
+                <nav className="bg-white border-b">
+                  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between h-16">
+                      <div className="flex">
+                        <div className="flex-shrink-0 flex items-center">
+                          <h1 className="text-xl font-bold text-indigo-600">Job Dashboard</h1>
+                        </div>
+                        <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+                          {['overview', 'applications', 'analytics'].map(tab => (
+                            <motion.button
+                              key={tab}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setActiveTab(tab)}
+                              className={\`\${
+                                activeTab === tab
+                                  ? 'border-indigo-500 text-gray-900'
+                                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                              } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium\`}
+                            >
+                              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </nav>
+
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'overview' && (
+                      <motion.div
+                        key="overview"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                          <DashboardCard
+                            title="Applied"
+                            value={stats.applied}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="green"
+                          />
+                          <DashboardCard
+                            title="Already Applied"
+                            value={stats.alreadyApplied}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="yellow"
+                          />
+                          <DashboardCard
+                            title="Failed"
+                            value={stats.failed}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="red"
+                          />
+                          <DashboardCard
+                            title="Skipped"
+                            value={stats.skipped}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />}
+                            color="blue"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <ChartSection data={stats} />
+                          <div className="card p-6">
+                            <h3 className="text-lg font-semibold mb-4">Recent Applications</h3>
+                            <ApplicationsTable jobs={jobs.slice(0, 5)} />
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'applications' && (
+                      <motion.div
+                        key="applications"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="flex flex-wrap gap-4 mb-6">
+                          {searchItems.map(item => (
+                            <motion.button
+                              key={item}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedSearchItem(item)}
+                              className={\`tab \${selectedSearchItem === item ? 'active' : 'bg-white'}\`}
+                            >
+                              {item}
+                            </motion.button>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-between items-center mb-6">
+                          <input
+                            type="text"
+                            placeholder="Search jobs..."
+                            className="search-filter px-4 py-2 w-64"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                          />
+                          <select
+                            className="search-filter px-4 py-2"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                          >
+                            <option value="">All Status</option>
+                            <option value="success">Applied</option>
+                            <option value="already_applied">Already Applied</option>
+                            <option value="failed">Failed</option>
+                            <option value="skipped">Skipped</option>
+                          </select>
+                        </div>
+
+                        <ApplicationsTable
+                          jobs={selectedSearchItem ? jobsBySearchTerm[selectedSearchItem] : jobs}
+                          searchTerm={searchTerm}
+                          statusFilter={statusFilter}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'analytics' && (
+                      <motion.div
+                        key="analytics"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <ChartSection data={stats} />
+                          <div className="card p-6">
+                            <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
+                            {/* Add more analytics visualizations here */}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </main>
+              </div>
+            );
+          }
+
+          ReactDOM.render(<Dashboard />, document.getElementById('root'));
+        </script>
       </body>
-      </html>
-      `;
+      </html>`;
+
       fs.writeFileSync(this.htmlReportPath, html, "utf-8");
       console.log(`✅ HTML dashboard report generated: ${this.htmlReportPath}`);
     } catch (err) {
@@ -531,59 +847,6 @@ const safeClick = async (page, selector, description = "element") => {
   }
 };
 
-// --- AI Agent/Eval Function ---
-function aiEvaluateJob(jobTitle, companyName) {
-  // Example logic: you can replace this with a call to an LLM or external API
-  const title = (jobTitle || "").toLowerCase();
-  const company = (companyName || "").toLowerCase();
-
-  // Example: skip if title contains "intern" or "junior"
-  if (title.includes("intern") || title.includes("junior")) return "skip";
-  // Example: flag for review if company is "consulting"
-  if (company.includes("consulting")) return "review";
-  // Otherwise, apply if matches search criteria
-  return "apply";
-}
-
-// Apply to job helper function
-async function applyToJob(page) {
-  try {
-    // Check if already applied
-    const alreadyAppliedText = await page
-      .locator("text=You have already applied")
-      .count();
-    if (alreadyAppliedText > 0) {
-      return { success: true, alreadyApplied: true };
-    }
-
-    // Find and click the apply button
-    const applyButton = page
-      .locator('button:has-text("Apply Now"), a:has-text("Apply Now")')
-      .first();
-    const buttonCount = await applyButton.count();
-
-    if (buttonCount === 0) {
-      return { success: false, reason: "No apply button found" };
-    }
-
-    await applyButton.click();
-    await page.waitForTimeout(2000);
-
-    // Check for successful application
-    const confirmationText = await page
-      .locator("text=Application submitted successfully")
-      .count();
-    if (confirmationText > 0) {
-      return { success: true, alreadyApplied: false };
-    }
-
-    // For now, simulate success (you can add more complex application logic here)
-    return { success: true, alreadyApplied: false };
-  } catch (error) {
-    return { success: false, reason: error.message };
-  }
-}
-
 // Process individual job
 const processJob = async (context, jobCard, cardIndex, logger) => {
   let newTab = null;
@@ -632,21 +895,6 @@ const processJob = async (context, jobCard, cardIndex, logger) => {
     console.log(
       `Job Details - Title: "${jobTitle}", Company: "${companyName}"`
     );
-
-    // --- AI Agent/Eval decision ---
-    const aiDecision = aiEvaluateJob(jobTitle, companyName);
-    if (aiDecision === "skip") {
-      const reason = `Skipped - AI Agent decision`;
-      console.log(`🤖 AI Agent: Skipping "${jobTitle}"`);
-      await logger.logJob(jobTitle, companyName, reason);
-      return { success: false, reason: reason, skipped: true };
-    }
-    if (aiDecision === "review") {
-      const reason = `Flagged for Review - AI Agent decision`;
-      console.log(`🤖 AI Agent: Flagged "${jobTitle}" for review`);
-      await logger.logJob(jobTitle, companyName, reason);
-      return { success: false, reason: reason, skipped: true };
-    }
 
     // Check if job title matches search criteria
     const matchResult = matchesSearchCriteria(jobTitle);
@@ -707,529 +955,426 @@ const processJob = async (context, jobCard, cardIndex, logger) => {
 // Process jobs with controlled concurrency
 const processJobBatch = async (context, jobCards, logger) => {
   const results = [];
-  const maxRetries = 2;
 
   // Process jobs in smaller batches to avoid overwhelming
   for (let i = 0; i < jobCards.length; i += MAX_CONCURRENT_TABS) {
-    let retryCount = 0;
-
-    while (retryCount <= maxRetries) {
-      try {
-        // Verify context is still valid
-        if (context._closed) {
-          console.warn("Context closed, stopping job batch processing.");
-          return results;
-        }
-
-        const batch = jobCards.slice(i, i + MAX_CONCURRENT_TABS);
-        console.log(
-          `🔄 Processing batch ${Math.floor(i / MAX_CONCURRENT_TABS) + 1} (${
-            batch.length
-          } jobs)`
-        );
-
-        // Process jobs with proper error handling
-        const batchPromises = batch.map(async (jobCard, index) => {
-          try {
-            // Stagger the requests
-            await new Promise((resolve) =>
-              setTimeout(resolve, index * TAB_DELAY)
-            );
-
-            // Verify context before each job
-            if (context._closed) {
-              return {
-                success: false,
-                reason: "Context closed",
-                skipped: true,
-              };
-            }
-
-            return await processJob(context, jobCard, i + index, logger);
-          } catch (error) {
-            console.error(`Error processing job ${i + index + 1}:`, error);
-            return { success: false, reason: error.message };
-          }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults);
-
-        // Break retry loop on success
-        break;
-      } catch (error) {
-        retryCount++;
-        console.error(`Batch processing attempt ${retryCount} failed:`, error);
-
-        if (retryCount <= maxRetries) {
-          console.log(`Retrying batch in 5 seconds...`);
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-        } else {
-          console.error(`Failed to process batch after ${maxRetries} attempts`);
-          // Mark remaining jobs as failed
-          const remainingJobs = jobCards.length - results.length;
-          const failedResults = Array(remainingJobs).fill({
-            success: false,
-            reason: "Batch processing failed",
-            skipped: false,
-          });
-          results.push(...failedResults);
-        }
-      }
+    // Check if context is closed before starting a batch
+    if (context._closed) {
+      console.warn("Context closed, stopping job batch processing.");
+      break;
     }
 
-    // Add delay between batches
-    if (i + MAX_CONCURRENT_TABS < jobCards.length) {
-      if (!context._closed) {
-        console.log(`⏳ Pausing ${PAGE_DELAY}ms before next batch...`);
-        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+    const batch = jobCards.slice(i, i + MAX_CONCURRENT_TABS);
+    console.log(
+      `🔄 Processing batch ${Math.floor(i / MAX_CONCURRENT_TABS) + 1} (${
+        batch.length
+      } jobs)`
+    );
+
+    const batchPromises = batch.map(async (jobCard, index) => {
+      // Stagger the requests
+      await new Promise((resolve) => setTimeout(resolve, index * TAB_DELAY));
+      // Check if context is closed before each job
+      if (context._closed) {
+        return { success: false, reason: "Context closed", skipped: true };
       }
+      return processJob(context, jobCard, i + index, logger);
+    });
+
+    const batchResults = await Promise.allSettled(batchPromises);
+
+    batchResults.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        results.push(result.value);
+      } else {
+        results.push({ success: false, reason: result.reason });
+        console.error(`❌ Batch job ${i + index + 1} failed:`, result.reason);
+      }
+    });
+
+    // Pause between batches
+    if (i + MAX_CONCURRENT_TABS < jobCards.length) {
+      if (context._closed) break;
+      console.log(`⏳ Pausing ${PAGE_DELAY}ms before next batch...`);
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
     }
   }
 
   return results;
 };
 
-// Remove these unused global variables
-// Track progress for resuming
-// let currentSearchIdx = 0;
-// let currentPageNum = 1;
-
-// Process single search term
-async function processSearchTerm(
-  context,
-  page,
-  searchTerm,
-  logger,
-  healthMonitor,
-  browser,
-  activePages
-) {
-  const stats = {
-    applied: 0,
-    failed: 0,
-    skipped: 0,
-    alreadyApplied: 0,
-    total: 0,
-  };
+// Main test
+test("Auto-apply to Jobs on Dice - Fixed Version", async ({ browser }) => {
+  let context;
+  let page;
+  let logger;
 
   try {
-    const encodedSearch = encodeURIComponent(searchTerm);
+    // Initialize
+    logger = new JobApplicationLogger();
+    await logger.initializeExcel();
 
-    for (let currentPage = 1; currentPage <= MAX_PAGES; currentPage++) {
-      // Save state before each page processing
-      healthMonitor.saveState(searchTerm, currentPage);
+    context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    });
 
-      // Verify page health before processing
-      if (!(await healthMonitor.checkHealth(page))) {
-        console.log("⚠️ Page health check failed, attempting recovery...");
-        const recovered = await healthMonitor.recover(
-          context,
-          page,
-          activePages,
-          browser,
-          logger
-        );
-        if (!recovered) {
-          console.log(
-            "❌ Could not recover page health, skipping to next search term..."
-          );
+    page = await context.newPage();
+
+    console.log("🔐 Starting login process...");
+
+    // Login
+    const loginSuccess = await safeGoto(page, LOGIN_URL);
+    if (!loginSuccess) {
+      throw new Error("Failed to load login page");
+    }
+
+    // Handle login form
+    try {
+      await page.waitForSelector('input[name="email"]', { timeout: 15000 });
+      await page.fill('input[name="email"]', USERNAME);
+
+      await safeClick(page, 'button[type="submit"]', "first submit button");
+
+      await page.waitForSelector('input[name="password"]', { timeout: 15000 });
+      await page.fill('input[name="password"]', PASSWORD);
+
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: "networkidle", timeout: 30000 }),
+        safeClick(page, 'button[type="submit"]', "password submit button"),
+      ]);
+
+      console.log("✅ Login successful");
+      await page.waitForTimeout(3000);
+    } catch (loginError) {
+      throw new Error(`Login failed: ${loginError.message}`);
+    }
+
+    // Initialize statistics
+    const stats = {
+      applied: 0,
+      failed: 0,
+      skipped: 0,
+      alreadyApplied: 0,
+      total: 0,
+    };
+
+    // Process each search term sequentially for better stability
+    for (const searchTerm of SEARCH_ITEMS) {
+      console.log(`\n🔍 Processing search term: "${searchTerm}"`);
+
+      const encodedSearch = encodeURIComponent(searchTerm);
+
+      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+        if (page.isClosed()) {
+          console.error("❌ Main page closed unexpectedly");
           break;
         }
-      }
 
-      // Original page processing logic
-      const url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}${
-        currentPage > 1 ? `&page=${currentPage}` : ""
-      }`;
+        let url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}`;
+        if (pageNum > 1) {
+          url += `&page=${pageNum}`;
+        }
 
-      console.log(`\n🔎 Navigating to search page: ${url}`);
-      if (!(await safeGoto(page, url))) {
-        console.log(
-          "❌ Could not load search page, skipping to next search term..."
-        );
-        break;
-      }
+        console.log(`\n📄 Page ${pageNum} for "${searchTerm}"`);
 
-      // First check for the "no jobs found" message
-      const notFoundPhrase = `We weren't able to find any jobs for "${searchTerm}". Please try refining your search terms.`;
-      const pageContent = await page.content();
+        const pageLoaded = await safeGoto(page, url);
+        if (!pageLoaded) {
+          console.log(`⏭️ Skipping page ${pageNum} - failed to load`);
+          continue;
+        }
 
-      if (pageContent.includes(notFoundPhrase)) {
-        console.log(
-          `\u26a0\ufe0f No jobs found for "${searchTerm}". Waiting 5 seconds before moving to next search item...`
-        );
-        await page.waitForTimeout(5000);
-        break;
-      }
+        // Wait for job cards or no results message
+        try {
+          await page.waitForSelector("[data-testid='job-search-serp-card']", {
+            timeout: 15000,
+          });
+        } catch (err) {
+          // Check for no jobs found indicators
+          const noJobsIndicators = [
+            // Text phrases
+            `We weren't able to find any jobs for "${searchTerm}". Please try refining your search terms.`,
+            "No results found",
+            "We couldn't find any matches",
+            // Visual indicator
+            "img[loading='lazy']",
+          ];
 
-      try {
-        // Check for job cards
-        await page.waitForSelector("[data-testid='job-search-serp-card']", {
-          timeout: 15000,
-        });
+          let noJobsFound = false;
+          for (const indicator of noJobsIndicators) {
+            if (indicator.startsWith("img")) {
+              // Check for the lazy-loaded image
+              const imgCount = await page.locator(indicator).count();
+              if (imgCount > 0) {
+                console.log("⚠️ No jobs found (detected via image indicator)");
+                noJobsFound = true;
+                break;
+              }
+            } else {
+              // Check for text content
+              const pageContent = await page.content();
+              if (pageContent.includes(indicator)) {
+                console.log(`⚠️ No jobs found: "${indicator}"`);
+                noJobsFound = true;
+                break;
+              }
+            }
+          }
 
-        // Get job cards
+          if (noJobsFound) {
+            console.log(
+              `⏭️ No jobs found for "${searchTerm}" on page ${pageNum}. Moving to next search term...`
+            );
+            await page.waitForTimeout(2000);
+            break; // Exit the page loop and move to next search term
+          }
+
+          console.log("⚠️ No job cards found on this page.");
+          continue;
+        }
+
         const jobCardLocator = page.locator(
           "[data-testid='job-search-serp-card']"
         );
         const jobCardCount = await jobCardLocator.count();
-
-        if (jobCardCount === 0) {
-          if (currentPage === 1) {
-            console.log(
-              "ℹ️ No jobs found on first page, moving to next search term..."
-            );
-            break;
-          }
-          console.log(
-            "ℹ️ No more jobs on this page, moving to next search term..."
-          );
-          break; // Changed from continue to break - if no jobs found, likely no more pages
+        const jobCards = [];
+        for (let i = 0; i < jobCardCount; i++) {
+          jobCards.push(jobCardLocator.nth(i));
         }
 
-        console.log(
-          `📦 Found ${jobCardCount} job cards for search: '${searchTerm}', page: ${currentPage}`
-        );
+        console.log(`📋 Found ${jobCards.length} job cards`);
 
-        // Process job cards
-        const jobCards = Array.from({ length: jobCardCount }, (_, i) =>
-          jobCardLocator.nth(i)
-        );
+        if (jobCards.length === 0) continue;
+
+        // Process jobs
         const results = await processJobBatch(context, jobCards, logger);
 
-        // Update stats properly - fixed stats counting
-        for (const result of results) {
+        // Update statistics
+        results.forEach((result) => {
           stats.total++;
           if (result.success) {
             if (result.alreadyApplied) {
-              console.log(`🔄 Already applied to a job`);
               stats.alreadyApplied++;
             } else {
-              console.log(`✅ Successfully applied to a job`);
               stats.applied++;
             }
           } else if (result.skipped) {
-            console.log(`⏭️ Skipped a job: ${result.reason}`);
             stats.skipped++;
           } else {
-            console.log(`❌ Failed to process a job: ${result.reason}`);
             stats.failed++;
           }
-        }
-
-        console.log(`\n📊 Stats for "${searchTerm}" (Page ${currentPage}):
-          Applied: ${stats.applied}
-          Already Applied: ${stats.alreadyApplied}
-          Skipped: ${stats.skipped}
-          Failed: ${stats.failed}
-          Total: ${stats.total}\n`);
-
-        // Check if we should continue to next page
-        // If we haven't found any applicable jobs on this page, likely won't find more
-        if (
-          stats.applied === 0 &&
-          stats.alreadyApplied === 0 &&
-          currentPage > 1
-        ) {
-          console.log(
-            "ℹ️ No applicable jobs found on this page, moving to next search term..."
-          );
-          break;
-        }
-
-        // Add delay between pages
-        if (currentPage < MAX_PAGES) {
-          await page.waitForTimeout(PAGE_DELAY);
-        }
-      } catch (err) {
-        console.error(
-          `❌ Error processing page ${currentPage}: ${err.message}`
-        );
-        if (currentPage === 1) {
-          // If first page fails, move to next search term
-          break;
-        }
-      }
-    }
-  } catch (error) {
-    console.error(
-      `❌ Fatal error processing "${searchTerm}": ${error.message}`
-    );
-    // Attempt recovery on fatal error
-    try {
-      const recovered = await healthMonitor.recover(
-        context,
-        page,
-        activePages,
-        browser,
-        logger
-      );
-      if (!recovered) {
-        throw error; // Re-throw if recovery failed
-      }
-    } catch (recoveryError) {
-      console.error("❌ Recovery failed:", recoveryError.message);
-    }
-  }
-
-  return stats;
-}
-
-// Utility to clear browser storage (cookies, localStorage, etc.)
-async function clearBrowserStorage(browser) {
-  const contexts = browser.contexts();
-  for (const ctx of contexts) {
-    try {
-      await ctx.clearCookies();
-      await ctx.clearPermissions();
-      for (const page of ctx.pages()) {
-        try {
-          await page.evaluate(() => {
-            localStorage.clear();
-            sessionStorage.clear();
-          });
-        } catch {}
-      }
-      await ctx.close();
-    } catch {}
-  }
-}
-
-// Health monitoring and recovery system
-class HealthMonitor {
-  constructor() {
-    this.state = {
-      currentSearch: null,
-      currentPage: null,
-      processedJobs: new Set(),
-      recoveryAttempts: 0,
-      lastSuccessfulAction: null,
-      errors: [],
-    };
-    this.maxRecoveryAttempts = 3;
-  }
-
-  saveState(searchTerm, pageNum, jobId = null) {
-    this.state.currentSearch = searchTerm;
-    this.state.currentPage = pageNum;
-    if (jobId) this.state.processedJobs.add(jobId);
-    this.state.lastSuccessfulAction = new Date().getTime();
-  }
-
-  async checkHealth(page) {
-    try {
-      // Check page responsiveness
-      await page.evaluate(() => document.title);
-      return true;
-    } catch (error) {
-      this.logError("Page responsiveness check failed", error);
-      return false;
-    }
-  }
-
-  async recover(context, page, activePages, browser, logger) {
-    this.state.recoveryAttempts++;
-    console.log(
-      `🔄 Attempting recovery (Attempt ${this.state.recoveryAttempts}/${this.maxRecoveryAttempts})`
-    );
-
-    if (this.state.recoveryAttempts > this.maxRecoveryAttempts) {
-      throw new Error("Maximum recovery attempts exceeded");
-    }
-
-    // Level 1: Try refreshing the page
-    try {
-      await page.reload({ timeout: 30000 });
-      if (await this.checkHealth(page)) {
-        console.log("✅ Recovery successful through page refresh");
-        return true;
-      }
-    } catch (error) {
-      this.logError("Page refresh recovery failed", error);
-    }
-
-    // Level 2: Try creating new context and page
-    try {
-      await cleanup(context, activePages);
-      context = await createBrowserContext(browser);
-      page = await context.newPage();
-      activePages.add(page);
-
-      if (await performLogin(page)) {
-        console.log("✅ Recovery successful through context recreation");
-        return true;
-      }
-    } catch (error) {
-      this.logError("Context recreation recovery failed", error);
-    }
-
-    // Level 3: Full restart
-    console.log("⚠️ Attempting full restart...");
-    return false;
-  }
-
-  logError(message, error) {
-    this.state.errors.push({
-      timestamp: new Date(),
-      message,
-      error: error.message,
-    });
-    console.error(`❌ ${message}:`, error.message);
-  }
-
-  getRecoveryState() {
-    return {
-      canRetry: this.state.recoveryAttempts < this.maxRecoveryAttempts,
-      lastKnownState: {
-        searchTerm: this.state.currentSearch,
-        pageNum: this.state.currentPage,
-        processedJobs: Array.from(this.state.processedJobs),
-      },
-    };
-  }
-
-  resetRecoveryAttempts() {
-    this.state.recoveryAttempts = 0;
-  }
-}
-
-// Main test function
-test("Auto-apply to Jobs on Dice", async ({ browser }) => {
-  const logger = new JobApplicationLogger();
-  const healthMonitor = new HealthMonitor();
-  await logger.initializeExcel();
-
-  let context;
-  let page;
-  let activePages = new Set();
-
-  const stats = {
-    applied: 0,
-    failed: 0,
-    skipped: 0,
-    alreadyApplied: 0,
-    total: 0,
-  };
-
-  try {
-    // Create initial browser context
-    context = await createBrowserContext(browser);
-
-    // Create main page
-    page = await context.newPage();
-    activePages.add(page);
-
-    // Perform login once
-    console.log("\n================ LOGIN FLOW ================");
-    if (!(await performLogin(page))) {
-      throw new Error("Login failed");
-    }
-
-    // Process each search term
-    for (const searchTerm of SEARCH_ITEMS) {
-      try {
-        // Verify context is still valid
-        if (context._closed) {
-          console.log("⚠️ Context closed, recreating...");
-          await cleanup(context, activePages);
-          context = await createBrowserContext(browser);
-          page = await context.newPage();
-          activePages.add(page);
-
-          // Re-login if context was recreated
-          if (!(await performLogin(page))) {
-            throw new Error("Failed to re-login after context recreation");
-          }
-        }
+        });
 
         console.log(
-          `\n================ SEARCH: '${searchTerm}' ================\n`
+          `✅ Page ${pageNum} completed - Applied: ${stats.applied}, Already Applied: ${stats.alreadyApplied}, Failed: ${stats.failed}, Skipped: ${stats.skipped}`
         );
 
-        // Reset recovery attempts for each new search term
-        healthMonitor.resetRecoveryAttempts();
-
-        // Process search term with health monitoring
-        const searchStats = await processSearchTerm(
-          context,
-          page,
-          searchTerm,
-          logger,
-          healthMonitor,
-          browser,
-          activePages
-        );
-
-        // Update overall stats
-        stats.applied += searchStats.applied;
-        stats.failed += searchStats.failed;
-        stats.skipped += searchStats.skipped;
-        stats.alreadyApplied += searchStats.alreadyApplied;
-        stats.total += searchStats.total;
-
-        // Add a small delay between search terms
-        if (!context._closed) {
-          await page.waitForTimeout(2000);
-        }
-      } catch (error) {
-        console.error(
-          `❌ Error processing search term "${searchTerm}":`,
-          error
-        );
-        // Continue with next search term
+        // Pause between pages
+        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
       }
     }
+
+    // Final save and summary
+    await logger.saveExcel();
+    const logSummary = logger.getLogSummary();
+
+    console.log("\n" + "=".repeat(70));
+    console.log("📊 FINAL SUMMARY");
+    console.log("=".repeat(70));
+    console.log(`📁 Excel Log: ${logSummary.filename}`);
+    console.log(`📍 Location: ${logSummary.filepath}`);
+    console.log(`📝 Total Jobs Processed: ${stats.total}`);
+    console.log(`✅ Successfully Applied: ${stats.applied}`);
+    console.log(`🔄 Already Applied: ${stats.alreadyApplied}`);
+    console.log(`❌ Failed Applications: ${stats.failed}`);
+    console.log(`⏭️ Skipped (No Match): ${stats.skipped}`);
+
+    if (stats.total > 0) {
+      console.log(
+        `🎯 Success Rate: ${((stats.applied / stats.total) * 100).toFixed(1)}%`
+      );
+    }
+    console.log("=".repeat(70));
   } catch (error) {
-    console.error(`❌ Fatal error:`, error);
-  } finally {
-    // Cleanup
-    await cleanup(context, activePages);
-
-    // Save final results
-    try {
+    console.error(`❌ Main test error: ${error.message}`);
+    if (logger) {
+      await logger.logJob("System Error", "System", `Error: ${error.message}`);
       await logger.saveExcel();
+    }
+    throw error;
+  } finally {
+    if (logger) {
       await logger.generateHtmlReport();
-
-      console.log("\n✅ Test completed.");
-      console.log(`📁 Excel Log: ${logger.filepath}`);
-      console.log(`🌐 HTML Report: ${logger.htmlReportPath}`);
-      console.table(stats);
-    } catch (error) {
-      console.error(`❌ Error saving results:`, error);
+    }
+    if (context) {
+      try {
+        await context.close();
+      } catch (err) {
+        console.error(`❌ Error closing context: ${err.message}`);
+      }
     }
   }
 });
 
-// Helper function to create browser context
-async function createBrowserContext(browser) {
-  return await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  });
-}
+// Enhanced job application function
+async function applyToJob(page) {
+  try {
+    if (page.isClosed()) {
+      return { success: false, reason: "Page is closed" };
+    }
 
-// Helper function for cleanup
-async function cleanup(context, activePages) {
-  if (activePages) {
-    for (const page of activePages) {
-      if (page && !page.isClosed()) {
-        try {
-          await page.close();
-        } catch (err) {
-          console.error("Error closing page:", err);
+    console.log(`🎯 Attempting to apply to job: ${page.url()}`);
+    await page.waitForTimeout(2000);
+
+    // Check if already applied first
+    const alreadyAppliedSelectors = [
+      "text=You have already applied",
+      "text=Application submitted",
+      "text=Already applied",
+      ".already-applied",
+      "[data-testid='already-applied']",
+      "text=Application received",
+      "text=Applied",
+    ];
+
+    for (const selector of alreadyAppliedSelectors) {
+      try {
+        const element = await page.$(selector);
+        if (element) {
+          console.log(`ℹ️ Already applied to this job`);
+          return { success: true, alreadyApplied: true };
         }
+      } catch (err) {
+        // Continue checking
       }
     }
-    activePages.clear();
-  }
 
-  if (context && !context._closed) {
-    try {
-      await context.close();
-    } catch (err) {
-      console.error("Error closing context:", err);
+    // Find and click Apply button
+    const applySelectors = [
+      "#applyButton",
+      "apply-button-wc",
+      "button:has-text('Easy apply')",
+      "button:has-text('Apply now')",
+      "button:has-text('Apply')",
+      "[data-testid='apply-button']",
+      ".apply-button",
+      "button[data-testid='easy-apply']",
+      "input[value*='Apply']",
+    ];
+
+    let applyClicked = false;
+    for (const selector of applySelectors) {
+      try {
+        const element = await page.$(selector);
+        if (element) {
+          await element.click();
+          console.log(`✅ Clicked apply button: ${selector}`);
+          applyClicked = true;
+          await page.waitForTimeout(3000);
+          break;
+        }
+      } catch (err) {
+        continue;
+      }
     }
+
+    if (!applyClicked) {
+      return { success: false, reason: "No Apply button found" };
+    }
+
+    // Handle potential Next/Continue button
+    const nextSelectors = [
+      "button:has-text('Next')",
+      "button:has-text('Continue')",
+      "[data-testid='next-button']",
+      ".next-button",
+      "input[value*='Next']",
+    ];
+
+    for (const selector of nextSelectors) {
+      try {
+        const element = await page.$(selector);
+        if (element) {
+          await element.click();
+          console.log(`✅ Clicked next button: ${selector}`);
+          await page.waitForTimeout(3000);
+          break;
+        }
+      } catch (err) {
+        continue;
+      }
+    }
+
+    // Handle Submit button
+    const submitSelectors = [
+      "button:has-text('Submit')",
+      "button:has-text('Submit Application')",
+      "input[type='submit']",
+      "[data-testid='submit-button']",
+      ".submit-button",
+      "button:has-text('Send Application')",
+      "button:has-text('Apply Now')",
+      "input[value*='Submit']",
+    ];
+
+    for (const selector of submitSelectors) {
+      try {
+        const element = await page.$(selector);
+        if (element) {
+          await element.click();
+          console.log(`✅ Clicked submit button: ${selector}`);
+          await page.waitForTimeout(4000);
+          break;
+        }
+      } catch (err) {
+        continue;
+      }
+    }
+
+    // Check for success confirmation
+    const confirmationSelectors = [
+      ".post-apply-banner",
+      "[data-testid='application-confirmation']",
+      ".application-success",
+      ".confirmation-message",
+      "text=Application submitted",
+      "text=Successfully applied",
+      "text=Application received",
+      "text=Thank you for applying",
+      "text=Your application has been submitted",
+      "text=Application sent",
+    ];
+
+    for (const selector of confirmationSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        console.log(`✅ Application confirmation found: ${selector}`);
+        return { success: true, alreadyApplied: false };
+      } catch (err) {
+        continue;
+      }
+    }
+
+    // Check URL for success indicators
+    const currentUrl = page.url();
+    if (
+      currentUrl.includes("success") ||
+      currentUrl.includes("applied") ||
+      currentUrl.includes("confirmation") ||
+      currentUrl.includes("thank-you")
+    ) {
+      console.log(`✅ Success indicated by URL: ${currentUrl}`);
+      return { success: true, alreadyApplied: false };
+    }
+
+    // If we get here, assume success but couldn't verify
+    console.log(
+      `⚠️ Application attempt completed, but couldn't verify success`
+    );
+    return { success: true, alreadyApplied: false };
+  } catch (err) {
+    console.error(`❌ Error during job application: ${err.message}`);
+    return { success: false, reason: err.message };
   }
 }

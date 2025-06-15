@@ -7,8 +7,18 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@headlessui/react": "^2.2.4",
+    "@heroicons/react": "^2.2.0",
+    "autoprefixer": "^10.4.21",
     "exceljs": "^4.4.0",
-    "playwright-core": "^1.53.0"
+    "framer-motion": "^12.17.3",
+    "playwright-core": "^1.53.0",
+    "postcss": "^8.5.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.3",
+    "tailwindcss": "^4.1.10"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
