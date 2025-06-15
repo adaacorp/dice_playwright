@@ -34,21 +34,3 @@ jobs:
         run: |
           echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
           echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
-
-      - name: Send email notification
-        uses: dawidd6/action-send-mail@v4
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "GitHub Actions Job Completed"
-          to: amar368babu@gmail.com
-          from: "Playwright CI <amar368babu@gmail.com>"
-          content_type: text/plain
-          body: |
-            The Playwright job has completed.
-            Date: ${{ steps.get_date.outputs.date }}
-            Time: ${{ steps.get_date.outputs.time }} UTC
-            Repository: ${{ github.repository }}
-            Workflow: ${{ github.workflow }}

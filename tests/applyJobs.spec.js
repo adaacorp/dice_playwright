@@ -789,6 +789,20 @@ const safeClick = async (page, selector, description = "element") => {
   }
 };
 
+// --- AI Agent/Eval Function ---
+function aiEvaluateJob(jobTitle, companyName) {
+  // Example logic: you can replace this with a call to an LLM or external API
+  const title = (jobTitle || "").toLowerCase();
+  const company = (companyName || "").toLowerCase();
+
+  // Example: skip if title contains "intern" or "junior"
+  if (title.includes("intern") || title.includes("junior")) return "skip";
+  // Example: flag for review if company is "consulting"
+  if (company.includes("consulting")) return "review";
+  // Otherwise, apply if matches search criteria
+  return "apply";
+}
+
 // Process individual job
 const processJob = async (context, jobCard, cardIndex, logger) => {
   let newTab = null;
@@ -837,6 +851,21 @@ const processJob = async (context, jobCard, cardIndex, logger) => {
     console.log(
       `Job Details - Title: "${jobTitle}", Company: "${companyName}"`
     );
+
+    // --- AI Agent/Eval decision ---
+    const aiDecision = aiEvaluateJob(jobTitle, companyName);
+    if (aiDecision === "skip") {
+      const reason = `Skipped - AI Agent decision`;
+      console.log(`🤖 AI Agent: Skipping "${jobTitle}"`);
+      await logger.logJob(jobTitle, companyName, reason);
+      return { success: false, reason: reason, skipped: true };
+    }
+    if (aiDecision === "review") {
+      const reason = `Flagged for Review - AI Agent decision`;
+      console.log(`🤖 AI Agent: Flagged "${jobTitle}" for review`);
+      await logger.logJob(jobTitle, companyName, reason);
+      return { success: false, reason: reason, skipped: true };
+    }
 
     // Check if job title matches search criteria
     const matchResult = matchesSearchCriteria(jobTitle);
@@ -945,179 +974,169 @@ const processJobBatch = async (context, jobCards, logger) => {
   return results;
 };
 
-// Main test
-test("Auto-apply to Jobs on Dice - Fixed Version", async ({ browser }) => {
-  let context;
-  let page;
-  let logger;
+// Track progress for resuming
+let currentSearchIdx = 0;
+let currentPageNum = 1;
 
-  try {
-    // Initialize
-    logger = new JobApplicationLogger();
-    await logger.initializeExcel();
-
-    context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    });
-
-    page = await context.newPage();
-
-    console.log("🔐 Starting login process...");
-
-    // Login
-    const loginSuccess = await safeGoto(page, LOGIN_URL);
-    if (!loginSuccess) {
-      throw new Error("Failed to load login page");
-    }
-
-    // Handle login form
+// Utility to clear browser storage (cookies, localStorage, etc.)
+async function clearBrowserStorage(browser) {
+  const contexts = browser.contexts();
+  for (const ctx of contexts) {
     try {
+      await ctx.clearCookies();
+      await ctx.clearPermissions();
+      // Optionally, clear local/session storage for each page
+      for (const page of ctx.pages()) {
+        try {
+          await page.evaluate(() => {
+            localStorage.clear();
+            sessionStorage.clear();
+          });
+        } catch {}
+      }
+      await ctx.close();
+    } catch {}
+  }
+}
+
+// Main test with self-healing
+test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
+  let logger = new JobApplicationLogger();
+  await logger.initializeExcel();
+
+  let stats = {
+    applied: 0,
+    failed: 0,
+    skipped: 0,
+    alreadyApplied: 0,
+    total: 0,
+  };
+
+  while (currentSearchIdx < SEARCH_ITEMS.length) {
+    let context, page;
+    let timedOut = false;
+    const startTime = Date.now();
+
+    try {
+      context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      });
+      page = await context.newPage();
+
+      // Login
+      const loginSuccess = await safeGoto(page, LOGIN_URL);
+      if (!loginSuccess) throw new Error("Failed to load login page");
+
       await page.waitForSelector('input[name="email"]', { timeout: 15000 });
       await page.fill('input[name="email"]', USERNAME);
-
       await safeClick(page, 'button[type="submit"]', "first submit button");
-
       await page.waitForSelector('input[name="password"]', { timeout: 15000 });
       await page.fill('input[name="password"]', PASSWORD);
-
       await Promise.all([
         page.waitForNavigation({ waitUntil: "networkidle", timeout: 30000 }),
         safeClick(page, 'button[type="submit"]', "password submit button"),
       ]);
-
-      console.log("✅ Login successful");
       await page.waitForTimeout(3000);
-    } catch (loginError) {
-      throw new Error(`Login failed: ${loginError.message}`);
-    }
 
-    // Initialize statistics
-    const stats = {
-      applied: 0,
-      failed: 0,
-      skipped: 0,
-      alreadyApplied: 0,
-      total: 0,
-    };
+      // Resume from last progress
+      for (; currentSearchIdx < SEARCH_ITEMS.length; currentSearchIdx++) {
+        const searchTerm = SEARCH_ITEMS[currentSearchIdx];
+        const encodedSearch = encodeURIComponent(searchTerm);
 
-    // Process each search term sequentially for better stability
-    for (const searchTerm of SEARCH_ITEMS) {
-      console.log(`\n🔍 Processing search term: "${searchTerm}"`);
-
-      const encodedSearch = encodeURIComponent(searchTerm);
-
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-        if (page.isClosed()) {
-          console.error("❌ Main page closed unexpectedly");
-          break;
-        }
-
-        let url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}`;
-        if (pageNum > 1) {
-          url += `&page=${pageNum}`;
-        }
-
-        console.log(`\n📄 Page ${pageNum} for "${searchTerm}"`);
-
-        const pageLoaded = await safeGoto(page, url);
-        if (!pageLoaded) {
-          console.log(`⏭️ Skipping page ${pageNum} - failed to load`);
-          continue;
-        }
-
-        // Wait for job cards
-        try {
-          await page.waitForSelector("[data-testid='job-search-serp-card']", {
-            timeout: 15000,
-          });
-        } catch (err) {
-          console.log(`⏭️ No job cards found on page ${pageNum}`);
-          continue;
-        }
-
-        const jobCardLocator = page.locator(
-          "[data-testid='job-search-serp-card']"
-        );
-        const jobCardCount = await jobCardLocator.count();
-        const jobCards = [];
-        for (let i = 0; i < jobCardCount; i++) {
-          jobCards.push(jobCardLocator.nth(i));
-        }
-
-        console.log(`📋 Found ${jobCards.length} job cards`);
-
-        if (jobCards.length === 0) continue;
-
-        // Process jobs
-        const results = await processJobBatch(context, jobCards, logger);
-
-        // Update statistics
-        results.forEach((result) => {
-          stats.total++;
-          if (result.success) {
-            if (result.alreadyApplied) {
-              stats.alreadyApplied++;
-            } else {
-              stats.applied++;
-            }
-          } else if (result.skipped) {
-            stats.skipped++;
-          } else {
-            stats.failed++;
+        for (; currentPageNum <= MAX_PAGES; currentPageNum++) {
+          // Self-heal if delay crosses 15min
+          if (Date.now() - startTime > 900000) {
+            timedOut = true;
+            break;
           }
-        });
 
-        console.log(
-          `✅ Page ${pageNum} completed - Applied: ${stats.applied}, Already Applied: ${stats.alreadyApplied}, Failed: ${stats.failed}, Skipped: ${stats.skipped}`
-        );
+          let url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}`;
+          if (currentPageNum > 1) url += `&page=${currentPageNum}`;
+          const pageLoaded = await safeGoto(page, url);
+          if (!pageLoaded) continue;
 
-        // Pause between pages
-        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+          try {
+            await page.waitForSelector("[data-testid='job-search-serp-card']", {
+              timeout: 15000,
+            });
+          } catch (err) {
+            continue;
+          }
+
+          const jobCardLocator = page.locator(
+            "[data-testid='job-search-serp-card']"
+          );
+          const jobCardCount = await jobCardLocator.count();
+          const jobCards = [];
+          for (let i = 0; i < jobCardCount; i++) {
+            jobCards.push(jobCardLocator.nth(i));
+          }
+          if (jobCards.length === 0) continue;
+
+          const results = await processJobBatch(context, jobCards, logger);
+
+          results.forEach((result) => {
+            stats.total++;
+            if (result.success) {
+              if (result.alreadyApplied) stats.alreadyApplied++;
+              else stats.applied++;
+            } else if (result.skipped) stats.skipped++;
+            else stats.failed++;
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
+        }
+        if (timedOut) break;
+        currentPageNum = 1; // reset for next search term
       }
-    }
-
-    // Final save and summary
-    await logger.saveExcel();
-    const logSummary = logger.getLogSummary();
-
-    console.log("\n" + "=".repeat(70));
-    console.log("📊 FINAL SUMMARY");
-    console.log("=".repeat(70));
-    console.log(`📁 Excel Log: ${logSummary.filename}`);
-    console.log(`📍 Location: ${logSummary.filepath}`);
-    console.log(`📝 Total Jobs Processed: ${stats.total}`);
-    console.log(`✅ Successfully Applied: ${stats.applied}`);
-    console.log(`🔄 Already Applied: ${stats.alreadyApplied}`);
-    console.log(`❌ Failed Applications: ${stats.failed}`);
-    console.log(`⏭️ Skipped (No Match): ${stats.skipped}`);
-
-    if (stats.total > 0) {
-      console.log(
-        `🎯 Success Rate: ${((stats.applied / stats.total) * 100).toFixed(1)}%`
-      );
-    }
-    console.log("=".repeat(70));
-  } catch (error) {
-    console.error(`❌ Main test error: ${error.message}`);
-    if (logger) {
+    } catch (error) {
+      console.error(`❌ Main test error: ${error.message}`);
       await logger.logJob("System Error", "System", `Error: ${error.message}`);
       await logger.saveExcel();
-    }
-    throw error;
-  } finally {
-    if (logger) {
-      await logger.generateHtmlReport();
-    }
-    if (context) {
-      try {
-        await context.close();
-      } catch (err) {
-        console.error(`❌ Error closing context: ${err.message}`);
+    } finally {
+      if (context) {
+        try {
+          await context.close();
+        } catch {}
       }
     }
+
+    if (timedOut) {
+      console.log(
+        "🛑 15min exceeded. Self-healing: closing browsers, clearing storage..."
+      );
+      await clearBrowserStorage(browser);
+      console.log("⏳ Waiting 1 minute before restart...");
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+      console.log("⏳ Waiting 30 seconds after new context...");
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+      // Continue loop, resume from currentSearchIdx/currentPageNum
+    } else {
+      // Finished all, break loop
+      break;
+    }
   }
+
+  await logger.saveExcel();
+  await logger.generateHtmlReport();
+
+  // ...existing summary output...
+  console.log("\n" + "=".repeat(70));
+  console.log("📊 FINAL SUMMARY");
+  console.log("=".repeat(70));
+  console.log(`📝 Total Jobs Processed: ${stats.total}`);
+  console.log(`✅ Successfully Applied: ${stats.applied}`);
+  console.log(`🔄 Already Applied: ${stats.alreadyApplied}`);
+  console.log(`❌ Failed Applications: ${stats.failed}`);
+  console.log(`⏭️ Skipped (No Match): ${stats.skipped}`);
+  if (stats.total > 0) {
+    console.log(
+      `🎯 Success Rate: ${((stats.applied / stats.total) * 100).toFixed(1)}%`
+    );
+  }
+  console.log("=".repeat(70));
 });
 
 // Enhanced job application function
