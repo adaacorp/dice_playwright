@@ -1,0 +1,23 @@
+HOW TO INITIALLY SET UP AND PUSH YOUR CODE TO GITHUB
+
+# 1. Initialize a new Git repository (if not already done)
+git init
+
+# 2. Add all files to staging
+git add .
+
+# 3. Commit the files
+git commit -m "Initial commit"
+
+# 4. Add the remote repository (replace the URL with your GitHub repo URL)
+git remote add origin https://github.com/your-username/your-repo.git
+
+# 5. Push the code to GitHub (main branch)
+git push -u origin main
+
+
+HOW TO PUSH YOU CODE ON TO GITHUB
+
+git add .
+git commit -m "Your commit message"
+git push origin main
