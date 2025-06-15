@@ -788,17 +788,23 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
       console.log("✅ Logged in and dashboard loaded!");
 
       // Resume from last progress
-      for (; currentSearchIdx < SEARCH_ITEMS.length; currentSearchIdx++) {
+      for (
+        let currentSearchIdx = 0;
+        currentSearchIdx < SEARCH_ITEMS.length;
+        currentSearchIdx++
+      ) {
         const searchTerm = SEARCH_ITEMS[currentSearchIdx];
         const encodedSearch = encodeURIComponent(searchTerm);
         console.log(
           `\n================ SEARCH: '${searchTerm}' ================`
         );
-
-        for (; currentPageNum <= MAX_PAGES; currentPageNum++) {
+        for (
+          let currentPageNum = 1;
+          currentPageNum <= MAX_PAGES;
+          currentPageNum++
+        ) {
           // Self-heal if delay crosses 30min
           if (Date.now() - startTime > 1800000) {
-            // 30min in ms
             timedOut = true;
             break;
           }
@@ -812,7 +818,6 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
             continue;
           }
 
-          let foundNoJobsPhrase = false;
           try {
             await page.waitForSelector("[data-testid='job-search-serp-card']", {
               timeout: 15000,
@@ -826,7 +831,6 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
                 `\u26a0\ufe0f No jobs found for \"${searchTerm}\". Waiting 5 seconds before moving to next search item...`
               );
               await page.waitForTimeout(5000);
-              foundNoJobsPhrase = true;
               break; // Move to next SEARCH_ITEM
             } else {
               console.log("⚠️ No job cards found on this page.");
