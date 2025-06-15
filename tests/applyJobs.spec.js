@@ -15,7 +15,7 @@ const SEARCH_ITEMS = [
   "Manual Tester",
 ];
 
-const MAX_PAGES = 1; // Reduced for faster execution
+const MAX_PAGES = 3; // Increased for more coverage
 const LOGIN_URL = "https://www.dice.com/dashboard/login";
 const USERNAME = "amar.sdet1@gmail.com"; // Replace with your Dice username
 const PASSWORD = "Admin@lcl25"; // Replace with your Dice password
@@ -768,24 +768,32 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
       page = await context.newPage();
 
       // Login
+      console.log("\n================ LOGIN FLOW ================");
       const loginSuccess = await safeGoto(page, LOGIN_URL);
       if (!loginSuccess) throw new Error("Failed to load login page");
+      console.log("🔑 Login page loaded");
 
       await page.waitForSelector('input[name="email"]', { timeout: 15000 });
+      console.log("📝 Filling in email...");
       await page.fill('input[name="email"]', USERNAME);
       await safeClick(page, 'button[type="submit"]', "first submit button");
       await page.waitForSelector('input[name="password"]', { timeout: 15000 });
+      console.log("📝 Filling in password...");
       await page.fill('input[name="password"]', PASSWORD);
       await Promise.all([
         page.waitForNavigation({ waitUntil: "networkidle", timeout: 30000 }),
         safeClick(page, 'button[type="submit"]', "password submit button"),
       ]);
       await page.waitForTimeout(3000);
+      console.log("✅ Logged in and dashboard loaded!");
 
       // Resume from last progress
       for (; currentSearchIdx < SEARCH_ITEMS.length; currentSearchIdx++) {
         const searchTerm = SEARCH_ITEMS[currentSearchIdx];
         const encodedSearch = encodeURIComponent(searchTerm);
+        console.log(
+          `\n================ SEARCH: '${searchTerm}' ================`
+        );
 
         for (; currentPageNum <= MAX_PAGES; currentPageNum++) {
           // Self-heal if delay crosses 30min
@@ -797,14 +805,19 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
 
           let url = `https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}`;
           if (currentPageNum > 1) url += `&page=${currentPageNum}`;
+          console.log(`\n🔎 Navigating to search page: ${url}`);
           const pageLoaded = await safeGoto(page, url);
-          if (!pageLoaded) continue;
+          if (!pageLoaded) {
+            console.log("❌ Could not load search page, skipping...");
+            continue;
+          }
 
           try {
             await page.waitForSelector("[data-testid='job-search-serp-card']", {
               timeout: 15000,
             });
           } catch (err) {
+            console.log("⚠️ No job cards found on this page.");
             continue;
           }
 
@@ -812,15 +825,30 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
             "[data-testid='job-search-serp-card']"
           );
           const jobCardCount = await jobCardLocator.count();
+          console.log(
+            `📦 Found ${jobCardCount} job cards for search: '${searchTerm}', page: ${currentPageNum}`
+          );
           const jobCards = [];
           for (let i = 0; i < jobCardCount; i++) {
             jobCards.push(jobCardLocator.nth(i));
           }
-          if (jobCards.length === 0) continue;
+          if (jobCards.length === 0) {
+            console.log("ℹ️ No jobs to process on this page.");
+            continue;
+          }
 
           const results = await processJobBatch(context, jobCards, logger);
 
-          results.forEach((result) => {
+          results.forEach((result, idx) => {
+            if (result.success) {
+              if (result.alreadyApplied)
+                console.log(`🔄 [${idx + 1}] Already applied.`);
+              else console.log(`✅ [${idx + 1}] Successfully applied.`);
+            } else if (result.skipped) {
+              console.log(`⏭️ [${idx + 1}] Skipped.`);
+            } else {
+              console.log(`❌ [${idx + 1}] Failed: ${result.reason}`);
+            }
             stats.total++;
             if (result.success) {
               if (result.alreadyApplied) stats.alreadyApplied++;
