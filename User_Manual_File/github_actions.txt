@@ -21,3 +21,7 @@ HOW TO PUSH YOU CODE ON TO GITHUB
 git add .
 git commit -m "Playwright_DICE_Automation"
 git push origin main
+
+git add .
+git commit -m "Final_Playwright_DICE_Automation"
+git push origin main
