@@ -812,13 +812,26 @@ test("Auto-apply to Jobs on Dice - Self-Healing", async ({ browser }) => {
             continue;
           }
 
+          let foundNoJobsPhrase = false;
           try {
             await page.waitForSelector("[data-testid='job-search-serp-card']", {
               timeout: 15000,
             });
           } catch (err) {
-            console.log("⚠️ No job cards found on this page.");
-            continue;
+            // No job cards found, check for the no jobs phrase
+            const notFoundPhrase = `We weren't able to find any jobs for \"${searchTerm}\". Please try refining your search terms.`;
+            const pageContent = await page.content();
+            if (pageContent.includes(notFoundPhrase)) {
+              console.log(
+                `\u26a0\ufe0f No jobs found for \"${searchTerm}\". Waiting 5 seconds before moving to next search item...`
+              );
+              await page.waitForTimeout(5000);
+              foundNoJobsPhrase = true;
+              break; // Move to next SEARCH_ITEM
+            } else {
+              console.log("⚠️ No job cards found on this page.");
+              continue;
+            }
           }
 
           const jobCardLocator = page.locator(
