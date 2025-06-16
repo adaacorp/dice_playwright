@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Job Application Dashboard</title>
+        <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+        <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+        <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+        <script src="https://unpkg.com/framer-motion@10.12.18/dist/framer-motion.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+          :root {
+            --primary-color: #6366f1;
+            --secondary-color: #818cf8;
+            --success-color: #22c55e;
+            --warning-color: #eab308;
+            --danger-color: #ef4444;
+            --background-color: #f8fafc;
+          }
+
+          body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            margin: 0;
+            padding: 0;
+          }
+
+          .card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+          }
+
+          .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+          }
+
+          .stats-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+          }
+
+          .chart-container {
+            position: relative;
+            margin: auto;
+            height: 300px;
+            width: 100%;
+          }
+
+          .tab {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+          }
+
+          .tab.active {
+            background-color: var(--primary-color);
+            color: white;
+          }
+
+          .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            padding: 1.5rem;
+          }
+
+          @keyframes fadeUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          .fade-up {
+            animation: fadeUp 0.5s ease forwards;
+          }
+
+          .chart-animation {
+            animation: scaleIn 0.5s ease forwards;
+          }
+
+          @keyframes scaleIn {
+            from {
+              transform: scale(0.9);
+              opacity: 0;
+            }
+            to {
+              transform: scale(1);
+              opacity: 1;
+            }
+          }
+
+          .search-filter {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+          }
+
+          .stats-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          }
+
+          @media (max-width: 768px) {
+            .grid-container {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div id="root"></div>
+
+        <script type="text/babel">
+          const { useState, useEffect, useRef } = React;
+          const { motion, AnimatePresence } = Motion;
+
+          function DashboardCard({ title, value, icon, color }) {
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="card stats-card p-6"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-gray-500 text-sm font-medium">{title}</h3>
+                    <p className="stats-number mt-2">{value}</p>
+                  </div>
+                  <div className={`p-3 rounded-full bg-${color}-100`}>
+                    <svg className={`w-6 h-6 text-${color}-600`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      {icon}
+                    </svg>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          }
+
+          function ChartSection({ data }) {
+            const chartRef = useRef(null);
+
+            useEffect(() => {
+              if (chartRef.current) {
+                const ctx = chartRef.current.getContext('2d');
+                new Chart(ctx, {
+                  type: 'doughnut',
+                  data: {
+                    labels: ['Applied', 'Already Applied', 'Failed', 'Skipped'],
+                    datasets: [{
+                      data: [data.applied, data.alreadyApplied, data.failed, data.skipped],
+                      backgroundColor: [
+                        'rgba(99, 102, 241, 0.8)',
+                        'rgba(234, 179, 8, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                        'rgba(129, 140, 248, 0.8)'
+                      ],
+                      borderWidth: 0
+                    }]
+                  },
+                  options: {
+                    responsive: true,
+                    plugins: {
+                      legend: {
+                        position: 'bottom'
+                      }
+                    },
+                    animation: {
+                      animateScale: true,
+                      animateRotate: true
+                    }
+                  }
+                });
+              }
+            }, []);
+
+            return (
+              <div className="card p-6">
+                <h3 className="text-lg font-semibold mb-4">Application Distribution</h3>
+                <div className="chart-container">
+                  <canvas ref={chartRef}></canvas>
+                </div>
+              </div>
+            );
+          }
+
+          function ApplicationsTable({ jobs, searchTerm, statusFilter }) {
+            const filteredJobs = jobs.filter(job => {
+              const matchesSearch = !searchTerm || 
+                job.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.companyName.toLowerCase().includes(searchTerm.toLowerCase());
+              const matchesStatus = !statusFilter || job.category === statusFilter;
+              return matchesSearch && matchesStatus;
+            });
+
+            return (
+              <div className="card p-6 overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3">Job Title</th>
+                      <th className="text-left p-3">Company</th>
+                      <th className="text-left p-3">Status</th>
+                      <th className="text-left p-3">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredJobs.map((job, index) => (
+                      <motion.tr
+                        key={index}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="border-b hover:bg-gray-50"
+                      >
+                        <td className="p-3">{job.jobTitle}</td>
+                        <td className="p-3">{job.companyName}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded-full text-sm ${
+                            job.category === 'success' ? 'bg-green-100 text-green-800' :
+                            job.category === 'already_applied' ? 'bg-yellow-100 text-yellow-800' :
+                            job.category === 'failed' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {job.status}
+                          </span>
+                        </td>
+                        <td className="p-3">{job.timestamp}</td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+
+          function Dashboard() {
+            const [activeTab, setActiveTab] = useState('overview');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState('');
+            const [selectedSearchItem, setSelectedSearchItem] = useState('');
+
+            const stats = {"applied":12,"alreadyApplied":0,"failed":0,"skipped":73,"unknown":0};
+            const jobs = [{"serialNo":1,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:49:41 AM","category":"success"},{"serialNo":2,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:49:43 AM","category":"success"},{"serialNo":3,"jobTitle":"Technical Depot Associate Level 1","companyName":"ASM GlobalCompany Name - ASM Global","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:21 AM","category":"skipped"},{"serialNo":4,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:50:21 AM","category":"success"},{"serialNo":5,"jobTitle":"Golang Developer","companyName":"SSTech LLCCompany Name - SSTech LLC","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:27 AM","category":"skipped"},{"serialNo":6,"jobTitle":"Software Engineer- JAVA","companyName":"Strategic Staffing SolutionsCompany Name - Strategic Staffing Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:29 AM","category":"skipped"},{"serialNo":7,"jobTitle":"Senior Developer - Asset Management Technology","companyName":"Mass Mutual Financial GroupCompany Name - Mass Mutual Financial Group","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:35 AM","category":"skipped"},{"serialNo":8,"jobTitle":"Senior SQL Developer/ADF","companyName":"INSPYR SolutionsCompany Name - INSPYR Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:37 AM","category":"skipped"},{"serialNo":9,"jobTitle":"Process Engineer I","companyName":"Eli Lilly and CompanyCompany Name - Eli Lilly and Company","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:43 AM","category":"skipped"},{"serialNo":10,"jobTitle":"Clinical Data Manager","companyName":"Katalyst Healthcares and LifesciencesCompany Name - Katalyst Healthcares and Lifesciences","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:45 AM","category":"skipped"},{"serialNo":11,"jobTitle":"Network Engineer","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:50 AM","category":"skipped"},{"serialNo":12,"jobTitle":"Sr. Adobe Analytics Engineer","companyName":"Allwyn CorporationCompany Name - Allwyn Corporation","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:52 AM","category":"skipped"},{"serialNo":13,"jobTitle":"Senior Integration Engineer","companyName":"XFORIA IncCompany Name - XFORIA Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:50:58 AM","category":"skipped"},{"serialNo":14,"jobTitle":"Looking for Agentic AI Developer 10+ Years :: remote","companyName":"Infinity Tech Group IncCompany Name - Infinity Tech Group Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:00 AM","category":"skipped"},{"serialNo":15,"jobTitle":"INFOR LN A&D Consultant","companyName":"Benchmark IT- Technology TalentCompany Name - Benchmark IT- Technology Talent","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:06 AM","category":"skipped"},{"serialNo":16,"jobTitle":".Net Architect","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:08 AM","category":"skipped"},{"serialNo":17,"jobTitle":"Cyberark L3 Consultant","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:14 AM","category":"skipped"},{"serialNo":18,"jobTitle":"Programmer Analyst 6 - UI/UX + Front-End Developer","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:16 AM","category":"skipped"},{"serialNo":19,"jobTitle":"Sr. Desktop Engineer Level II","companyName":"Randstad DigitalCompany Name - Randstad Digital","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:22 AM","category":"skipped"},{"serialNo":20,"jobTitle":"Senior Salesforce Developer","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:24 AM","category":"skipped"},{"serialNo":21,"jobTitle":"Test Job","companyName":"tCognition, IncCompany Name - tCognition, Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:51:59 AM","category":"skipped"},{"serialNo":22,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:52:36 AM","category":"success"},{"serialNo":23,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:52:38 AM","category":"success"},{"serialNo":24,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:53:16 AM","category":"success"},{"serialNo":25,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:53:18 AM","category":"success"},{"serialNo":26,"jobTitle":"Technical Depot Associate Level 1","companyName":"ASM GlobalCompany Name - ASM Global","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:53:23 AM","category":"skipped"},{"serialNo":27,"jobTitle":"Production Support Manager Banking & Payments","companyName":"Bramkas Inc.Company Name - Bramkas Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:53:25 AM","category":"skipped"},{"serialNo":28,"jobTitle":".Net Architect","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:53:31 AM","category":"skipped"},{"serialNo":29,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:54:08 AM","category":"success"},{"serialNo":30,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:54:10 AM","category":"success"},{"serialNo":31,"jobTitle":"Sr. Azure DevOps Engineer (100% Remote Job) - W2 Only","companyName":"HYR Global Source IncCompany Name - HYR Global Source Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:16 AM","category":"skipped"},{"serialNo":32,"jobTitle":"BSP Integration & Release Engineer","companyName":"Aroha TechnologiesCompany Name - Aroha Technologies","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:18 AM","category":"skipped"},{"serialNo":33,"jobTitle":"BSP CI/CD, Build","companyName":"Aroha TechnologiesCompany Name - Aroha Technologies","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:24 AM","category":"skipped"},{"serialNo":34,"jobTitle":"Lead Analyst - Power App and Automate","companyName":"Tri-Force Consulting Services IncCompany Name - Tri-Force Consulting Services Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:26 AM","category":"skipped"},{"serialNo":35,"jobTitle":"Firmware Component Qualification Engineer","companyName":"Aroha TechnologiesCompany Name - Aroha Technologies","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:31 AM","category":"skipped"},{"serialNo":36,"jobTitle":"PCRF Engineer","companyName":"radient.aiCompany Name - radient.ai","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:33 AM","category":"skipped"},{"serialNo":37,"jobTitle":"Firmware Engineer","companyName":"Sharpedge SolutionsCompany Name - Sharpedge Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:39 AM","category":"skipped"},{"serialNo":38,"jobTitle":"General Clerk","companyName":"Tri-Force Consulting Services IncCompany Name - Tri-Force Consulting Services Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:41 AM","category":"skipped"},{"serialNo":39,"jobTitle":"Windows Endpoint/Intune Engineer","companyName":"JDA TSGCompany Name - JDA TSG","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:47 AM","category":"skipped"},{"serialNo":40,"jobTitle":"Core Java Developer","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:49 AM","category":"skipped"},{"serialNo":41,"jobTitle":"Senior Integration Engineer","companyName":"XFORIA IncCompany Name - XFORIA Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:54 AM","category":"skipped"},{"serialNo":42,"jobTitle":"Business Operations Manager / Contract / Remote","companyName":"Motion Recruitment Partners, LLCCompany Name - Motion Recruitment Partners, LLC","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:54:57 AM","category":"skipped"},{"serialNo":43,"jobTitle":"Production Support Manager Banking & Payments","companyName":"Bramkas Inc.Company Name - Bramkas Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:02 AM","category":"skipped"},{"serialNo":44,"jobTitle":"AWS DATA Architect","companyName":"LTIMindtreeCompany Name - LTIMindtree","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:04 AM","category":"skipped"},{"serialNo":45,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:55:41 AM","category":"success"},{"serialNo":46,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:55:43 AM","category":"success"},{"serialNo":47,"jobTitle":"Firmware Component Qualification Engineer","companyName":"Aroha TechnologiesCompany Name - Aroha Technologies","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:49 AM","category":"skipped"},{"serialNo":48,"jobTitle":"Firmware Engineer","companyName":"Sharpedge SolutionsCompany Name - Sharpedge Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:51 AM","category":"skipped"},{"serialNo":49,"jobTitle":"BSP CI/CD, Build","companyName":"Aroha TechnologiesCompany Name - Aroha Technologies","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:56 AM","category":"skipped"},{"serialNo":50,"jobTitle":"Senior Integration Engineer","companyName":"XFORIA IncCompany Name - XFORIA Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:55:58 AM","category":"skipped"},{"serialNo":51,"jobTitle":"AWS DATA Architect","companyName":"LTIMindtreeCompany Name - LTIMindtree","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:56:04 AM","category":"skipped"},{"serialNo":52,"jobTitle":"Test Job","companyName":"tCognition, IncCompany Name - tCognition, Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:02 AM","category":"skipped"},{"serialNo":53,"jobTitle":"NOC Technician","companyName":"Pavlov MediaCompany Name - Pavlov Media","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:38 AM","category":"skipped"},{"serialNo":54,"jobTitle":"Senior SQL Developer/ADF","companyName":"INSPYR SolutionsCompany Name - INSPYR Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:40 AM","category":"skipped"},{"serialNo":55,"jobTitle":"PostgreSQL DBA - ONSITE - Alpharetta, GA","companyName":"HAN IT Staffing Inc.Company Name - HAN IT Staffing Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:46 AM","category":"skipped"},{"serialNo":56,"jobTitle":"Sr Mulesoft Integration Developer Admin-Onsite in NJ","companyName":"Software Guidance & AssistanceCompany Name - Software Guidance & Assistance","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:48 AM","category":"skipped"},{"serialNo":57,"jobTitle":"Sr. Azure DevOps Engineer (100% Remote Job) - W2 Only","companyName":"HYR Global Source IncCompany Name - HYR Global Source Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:57:53 AM","category":"skipped"},{"serialNo":58,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:57:57 AM","category":"success"},{"serialNo":59,"jobTitle":"Looking for Agentic AI Developer 10+ Years :: remote","companyName":"Infinity Tech Group IncCompany Name - Infinity Tech Group Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:03 AM","category":"skipped"},{"serialNo":60,"jobTitle":"Google Cloud Platform Architect","companyName":"Miracle Software Systems, Inc.Company Name - Miracle Software Systems, Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:05 AM","category":"skipped"},{"serialNo":61,"jobTitle":"Adobe Experience Manager","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:11 AM","category":"skipped"},{"serialNo":62,"jobTitle":"Clinical Data Manager","companyName":"Katalyst Healthcares and LifesciencesCompany Name - Katalyst Healthcares and Lifesciences","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:13 AM","category":"skipped"},{"serialNo":63,"jobTitle":"IT Specialist Sr","companyName":"U.S. Marine CorpsCompany Name - U.S. Marine Corps","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:19 AM","category":"skipped"},{"serialNo":64,"jobTitle":"Senior Developer - Asset Management Technology","companyName":"Mass Mutual Financial GroupCompany Name - Mass Mutual Financial Group","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:21 AM","category":"skipped"},{"serialNo":65,"jobTitle":"ServiceNow Developer/Architect - Railroad or Transportation","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:26 AM","category":"skipped"},{"serialNo":66,"jobTitle":"Splunk Data Analytics SME","companyName":"MSYS Inc.Company Name - MSYS Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:28 AM","category":"skipped"},{"serialNo":67,"jobTitle":"Lead Analyst - Power App and Automate","companyName":"Tri-Force Consulting Services IncCompany Name - Tri-Force Consulting Services Inc","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:35 AM","category":"skipped"},{"serialNo":68,"jobTitle":"Azure HCI/Hyper-V Engineer","companyName":"Windward ConsultingCompany Name - Windward Consulting","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:36 AM","category":"skipped"},{"serialNo":69,"jobTitle":"Workday Integration Developer REMOTE","companyName":"Access Global Group LLCCompany Name - Access Global Group LLC","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:42 AM","category":"skipped"},{"serialNo":70,"jobTitle":"AWS DATA Architect","companyName":"LTIMindtreeCompany Name - LTIMindtree","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:44 AM","category":"skipped"},{"serialNo":71,"jobTitle":"Production Support Manager Banking & Payments","companyName":"Bramkas Inc.Company Name - Bramkas Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:50 AM","category":"skipped"},{"serialNo":72,"jobTitle":"Senior Network Comms Engineer, Cisco, Satellite, Intl VPNs","companyName":"Jupiter Medical CenterCompany Name - Jupiter Medical Center","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:58:52 AM","category":"skipped"},{"serialNo":73,"jobTitle":"Business Operations Manager / Contract / Remote","companyName":"Motion Recruitment Partners, LLCCompany Name - Motion Recruitment Partners, LLC","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:04 AM","category":"skipped"},{"serialNo":74,"jobTitle":"Software Engineer- JAVA","companyName":"Strategic Staffing SolutionsCompany Name - Strategic Staffing Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:07 AM","category":"skipped"},{"serialNo":75,"jobTitle":"Process Engineer I","companyName":"Eli Lilly and CompanyCompany Name - Eli Lilly and Company","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:12 AM","category":"skipped"},{"serialNo":76,"jobTitle":"SAP SAM Functional Consultant","companyName":"Stellar IT SolutionsCompany Name - Stellar IT Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:14 AM","category":"skipped"},{"serialNo":77,"jobTitle":"Sr. Desktop Engineer Level II","companyName":"Randstad DigitalCompany Name - Randstad Digital","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:20 AM","category":"skipped"},{"serialNo":78,"jobTitle":"Infrastructure Project Manager","companyName":"Bravo Technical ResourcesCompany Name - Bravo Technical Resources","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:22 AM","category":"skipped"},{"serialNo":79,"jobTitle":"Senior Salesforce Developer","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 10:59:28 AM","category":"skipped"},{"serialNo":80,"jobTitle":"Splunk Data Analytics SME","companyName":"MSYS Inc.Company Name - MSYS Inc.","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:05 AM","category":"skipped"},{"serialNo":81,"jobTitle":"AWS DATA Architect","companyName":"LTIMindtreeCompany Name - LTIMindtree","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:07 AM","category":"skipped"},{"serialNo":82,"jobTitle":"Senior SQL Developer/ADF","companyName":"INSPYR SolutionsCompany Name - INSPYR Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:12 AM","category":"skipped"},{"serialNo":83,"jobTitle":"Technical Depot Associate Level 1","companyName":"ASM GlobalCompany Name - ASM Global","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:14 AM","category":"skipped"},{"serialNo":84,"jobTitle":"Cyberark L3 Consultant","companyName":"Linkedin","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:20 AM","category":"skipped"},{"serialNo":85,"jobTitle":"Software Engineer- JAVA","companyName":"Strategic Staffing SolutionsCompany Name - Strategic Staffing Solutions","status":"Skipped - No match for search terms","timestamp":"6/16/2025, 11:00:55 AM","category":"skipped"}];
+            const searchItems = ["Software Tester","Quality","Test Analyst","Manual Tester","QA","Automation","Test Automation","SDET","Software Developer Engineer in Test","Performance","Load","Stress"];
+            const jobsBySearchTerm = {"Software Tester":[],"Quality":[],"Test Analyst":[],"Manual Tester":[],"QA":[{"serialNo":1,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:49:41 AM","category":"success"},{"serialNo":4,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:50:21 AM","category":"success"},{"serialNo":22,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:52:36 AM","category":"success"},{"serialNo":24,"jobTitle":"QA Tester","companyName":"Judge Group, Inc.Company Name - Judge Group, Inc.","status":"Already Applied","timestamp":"6/16/2025, 10:53:16 AM","category":"success"},{"serialNo":25,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:53:18 AM","category":"success"},{"serialNo":29,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:54:08 AM","category":"success"},{"serialNo":45,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:55:41 AM","category":"success"}],"Automation":[{"serialNo":2,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:49:43 AM","category":"success"},{"serialNo":4,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:50:21 AM","category":"success"},{"serialNo":23,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:52:38 AM","category":"success"},{"serialNo":25,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:53:18 AM","category":"success"},{"serialNo":29,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:54:08 AM","category":"success"},{"serialNo":30,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:54:10 AM","category":"success"},{"serialNo":45,"jobTitle":"Sr. QA Automation Engineer (Modern UI) - Lincoln, NE (Onsite from day one)","companyName":"Accion LabsCompany Name - Accion Labs","status":"Already Applied","timestamp":"6/16/2025, 10:55:41 AM","category":"success"},{"serialNo":46,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:55:43 AM","category":"success"},{"serialNo":58,"jobTitle":"Automation Tester : Web & API with Bank Exp","companyName":"Linkedin","status":"Already Applied","timestamp":"6/16/2025, 10:57:57 AM","category":"success"}],"Test Automation":[],"SDET":[],"Software Developer Engineer in Test":[],"Performance":[],"Load":[],"Stress":[]};
+
+            return (
+              <div className="min-h-screen bg-gray-50">
+                <nav className="bg-white border-b">
+                  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between h-16">
+                      <div className="flex">
+                        <div className="flex-shrink-0 flex items-center">
+                          <h1 className="text-xl font-bold text-indigo-600">Job Dashboard</h1>
+                        </div>
+                        <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+                          {['overview', 'applications', 'analytics'].map(tab => (
+                            <motion.button
+                              key={tab}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setActiveTab(tab)}
+                              className={`${
+                                activeTab === tab
+                                  ? 'border-indigo-500 text-gray-900'
+                                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                              } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                            >
+                              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </nav>
+
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'overview' && (
+                      <motion.div
+                        key="overview"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                          <DashboardCard
+                            title="Applied"
+                            value={stats.applied}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="green"
+                          />
+                          <DashboardCard
+                            title="Already Applied"
+                            value={stats.alreadyApplied}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="yellow"
+                          />
+                          <DashboardCard
+                            title="Failed"
+                            value={stats.failed}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                            color="red"
+                          />
+                          <DashboardCard
+                            title="Skipped"
+                            value={stats.skipped}
+                            icon={<path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />}
+                            color="blue"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <ChartSection data={stats} />
+                          <div className="card p-6">
+                            <h3 className="text-lg font-semibold mb-4">Recent Applications</h3>
+                            <ApplicationsTable jobs={jobs.slice(0, 5)} />
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'applications' && (
+                      <motion.div
+                        key="applications"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="flex flex-wrap gap-4 mb-6">
+                          {searchItems.map(item => (
+                            <motion.button
+                              key={item}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedSearchItem(item)}
+                              className={`tab ${selectedSearchItem === item ? 'active' : 'bg-white'}`}
+                            >
+                              {item}
+                            </motion.button>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-between items-center mb-6">
+                          <input
+                            type="text"
+                            placeholder="Search jobs..."
+                            className="search-filter px-4 py-2 w-64"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                          />
+                          <select
+                            className="search-filter px-4 py-2"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                          >
+                            <option value="">All Status</option>
+                            <option value="success">Applied</option>
+                            <option value="already_applied">Already Applied</option>
+                            <option value="failed">Failed</option>
+                            <option value="skipped">Skipped</option>
+                          </select>
+                        </div>
+
+                        <ApplicationsTable
+                          jobs={selectedSearchItem ? jobsBySearchTerm[selectedSearchItem] : jobs}
+                          searchTerm={searchTerm}
+                          statusFilter={statusFilter}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'analytics' && (
+                      <motion.div
+                        key="analytics"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-6"
+                      >
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <ChartSection data={stats} />
+                          <div className="card p-6">
+                            <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
+                            {/* Add more analytics visualizations here */}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </main>
+              </div>
+            );
+          }
+
+          ReactDOM.render(<Dashboard />, document.getElementById('root'));
+        </script>
+      </body>
+      </html>
